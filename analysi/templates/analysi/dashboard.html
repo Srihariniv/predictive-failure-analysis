@@ -1,0 +1,498 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/html2pdf.js@0.10.1/dist/html2pdf.bundle.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
+  <title>AI Dashboard</title>
+  <style>
+    .search-box { @apply w-full px-4 py-3 rounded-xl shadow-md focus:outline-none focus:ring-2 transition-all duration-200 text-sm font-medium; }
+    .reg-search { @apply bg-gradient-to-r from-teal-50 to-teal-100 border-2 border-teal-300 focus:ring-teal-500 focus:border-teal-500; }
+    .search-icon { @apply absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500; }
+    .table-row { @apply transition-all duration-200; }
+    .search-wrapper {
+      position: relative; display: flex; align-items: center; max-width: 28rem; margin: 1.5rem auto;
+      transition: all 0.3s ease; gap: 0.75rem;
+    }
+    .search-box { width: 100%; padding-left: 3rem; border-radius: 1rem; border: 2px solid transparent; font-size: 0.95rem; font-weight: 500; transition: all 0.3s ease; box-shadow: 0 4px 10px rgba(0,0,0,0.05);}
+    .reg-search { background: linear-gradient(to right, #f0fdfa, #ccfbf1); border-color: #14b8a6; }
+    .reg-search:focus { outline: none; box-shadow: 0 0 10px #14b8a6; background: #ffffff; border-color: #0d9488; }
+    .search-icon { position: absolute; left: 1rem; color: #6b7280; transition: color 0.3s ease;}
+    .download-btn { padding: 0.5rem 1rem; background-color: #2563eb; color: white; font-weight: 600; border-radius: 0.5rem; cursor: pointer; white-space: nowrap; user-select: none; transition: background-color 0.3s ease; }
+    .download-btn:hover { background-color: #1d4ed8; }
+    .excel-btn { margin-left: 1rem; padding: 0.3rem 0.8rem; background-color: #059669; color: white; font-weight: 600; border-radius: 0.5rem; cursor: pointer; white-space: nowrap; user-select: none; transition: background-color 0.3s ease;}
+    .excel-btn:hover { background-color: #047857; }
+    .chart-container { position: relative; height: 400px; width: 100%; }
+    .wave-animation { animation: waveFlow 3s ease-in-out infinite;}
+    @keyframes waveFlow { 0%, 100% {transform: translateY(0px);} 50% {transform: translateY(-5px);} }
+  </style>
+</head>
+<body class="bg-gray-100">
+  {% load extra_filters %}
+
+  <!-- NAVIGATION -->
+  <nav class="bg-gradient-to-r from-teal-600 to-teal-700 text-white shadow-lg">
+    <div class="container mx-auto px-6 py-4 flex justify-between items-center">
+      <a href="{% url 'home' %}" class="text-2xl font-bold">Predictive Failure Analysis Using AI</a>
+      <div class="flex gap-6 text-sm">
+        <a href="{% url 'dashboard' %}" class="hover:underline font-bold">Dashboard</a>
+        <a href="{% url 'upload_file' %}" class="hover:underline">Upload</a>
+        <a href="{% url 'raw_data' %}" class="hover:underline">Raw Data</a>
+        <a href="{% url 'profit_analysis' %}"
+   class="hover:underline {% if request.resolver_match.url_name == 'profit_analysis' %}font-bold text-yellow-300 underline{% endif %}">
+   Profit Analysis
+</a>
+
+        <a href="{% url 'future_predictions' %}" class="hover:underline">Future (30 Days)</a>
+        <a href="{% url 'future_box_score' %}"
+               class="{% if request.resolver_match.url_name == 'future_box_score' %}text-yellow-300 underline{% endif %}">
+               Future Profit
+            </a>
+      </div>
+    </div>
+  </nav>
+
+  <div class="container mx-auto p-6" id="dashboard-content">
+
+    <!-- GLOBAL SEARCH WITH DOWNLOAD BUTTON -->
+    <div class="search-wrapper flex items-center gap-4 px-4 py-3 bg-white rounded-lg shadow-md max-w-3xl mx-auto mb-8">
+      <div class="relative flex-grow">
+        <div class="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-gray-400 text-lg"></div>
+        <input type="text" id="globalSearch" placeholder="Search parts or models across tables..." class="w-full pl-10 pr-4 py-2 rounded-lg border border-gray-300 focus:border-teal-500 focus:ring-2 focus:ring-teal-400 focus:outline-none transition"/>
+      </div>
+      <button id="downloadBtn" class="px-5 py-2 bg-teal-600 text-white font-semibold rounded-lg shadow hover:bg-teal-700 focus:outline-none focus:ring-2 focus:ring-teal-400 transition" title="Download visible content as PDF">Download PDF</button>
+    </div>
+
+    <!-- Regression Table -->
+    <div class="mb-12">
+      <h1 class="text-4xl font-bold text-center mb-6 text-gray-800">Regression: Mean Absolute Error (MAE)</h1>
+      <div class="flex justify-end mb-2">
+        <button class="excel-btn" onclick="exportTableToExcel('regTable', 'RegressionResults.xlsx')">Download Regression Table</button>
+      </div>
+      <div class="bg-white rounded-xl shadow-lg p-6 overflow-x-auto">
+        <table class="w-full table-auto border-collapse" id="regTable">
+          <thead class="bg-teal-600 text-white">
+            <tr>
+              <th class="p-3 text-left">Model</th>
+              <th class="p-3 text-left">Part</th>
+              <th class="p-3 text-right">MAE</th>
+              <th class="p-3 text-center">Best?</th>
+            </tr>
+          </thead>
+          <tbody id="regBody">
+            {% for full_key, mae in reg_models.items %}
+              {% with parts=full_key|split:"_" %}
+                {% with model_name=parts|last part_name=parts|first %}
+                  <tr class="table-row border-b hover:bg-teal-50" data-part="{{ part_name|lower }}" data-model="{{ model_name|lower }}">
+                    <td class="p-3 font-medium">{{ model_name }}</td>
+                    <td class="p-3">{{ part_name }}</td>
+                    <td class="p-3 text-right">{{ mae|floatformat:3 }}</td>
+                    <td class="p-3 text-center">{% if reg_best|get_item:part_name == model_name %}<span class="text-yellow-600 font-bold">Best</span>{% endif %}</td>
+                  </tr>
+                {% endwith %}
+              {% endwith %}
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Classification Table -->
+    <div class="mb-12">
+      <h1 class="text-4xl font-bold text-center mb-6 text-gray-800">Classification: Accuracy (%)</h1>
+      <div class="flex justify-end mb-2">
+        <button class="excel-btn" onclick="exportTableToExcel('clfTable', 'ClassificationResults.xlsx')">Download Classification Table</button>
+      </div>
+      <div class="bg-white rounded-xl shadow-lg p-6 overflow-x-auto">
+        <table class="w-full table-auto border-collapse" id="clfTable">
+          <thead class="bg-purple-600 text-white">
+            <tr>
+              <th class="p-3 text-left">Model</th>
+              <th class="p-3 text-left">Part</th>
+              <th class="p-3 text-right">Accuracy</th>
+              <th class="p-3 text-center">Best?</th>
+            </tr>
+          </thead>
+          <tbody id="clfBody">
+            {% for full_key, acc in clf_models.items %}
+              {% with parts=full_key|split:"_" %}
+                {% with model_name=parts|last part_name=parts|first %}
+                  <tr class="table-row border-b hover:bg-purple-50" data-part="{{ part_name|lower }}" data-model="{{ model_name|lower }}">
+                    <td class="p-3 font-medium">{{ model_name }}</td>
+                    <td class="p-3">{{ part_name }}</td>
+                    <td class="p-3 text-right">{{ acc|floatformat:2 }}%</td>
+                    <td class="p-3 text-center">{% if clf_best|get_item:part_name == model_name %}<span class="text-yellow-600 font-bold">Best</span>{% endif %}</td>
+                  </tr>
+                {% endwith %}
+              {% endwith %}
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Top 5 Failures Chart 
+    <div class="mb-12">
+      <h2 class="text-4xl font-bold mb-6 text-center text-gray-800">Top 5 Parts by Total Failures</h2>
+      <div class="bg-white rounded-xl shadow-lg p-6">
+        <canvas id="topChart" height="400"></canvas>
+      </div>
+    </div>
+
+    <!-- Failure Rate vs Production Plan Waveform Chart -->
+    <div class="mb-12">
+      <h2 class="text-4xl font-bold mb-6 text-center text-gray-800 wave-animation">Failure Rate vs Production Plan Analysis</h2>
+      
+      <div class="bg-white rounded-xl shadow-lg p-6">
+        <div class="chart-container">
+          <canvas id="waveformChart"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <!-- Failure Rate Table--> 
+    <div class="mb-12">
+      <h2 class="text-4xl font-bold mb-6 text-center text-gray-800">Top 5 Parts by Failure Rate (%)</h2>
+      <div class="flex justify-end mb-2">
+        <button class="excel-btn" onclick="exportTableToExcel('failureRateTable', 'FailureRates.xlsx')">Download Failure Rate Table</button>
+      </div>
+      <div class="bg-white rounded-xl shadow-lg p-6 overflow-x-auto">
+        <table class="w-full text-sm md:text-base" id="failureRateTable">
+          <thead class="bg-gradient-to-r from-red-600 to-orange-600 text-white">
+            <tr>
+              <th class="px-4 py-3 text-left font-bold">Rank</th>
+              <th class="px-4 py-3 text-left font-bold">Part</th>
+              <th class="px-4 py-3 text-right font-bold">Total Plan</th>
+              <th class="px-4 py-3 text-right font-bold">Total Failures</th>
+              <th class="px-4 py-3 text-center font-bold text-yellow-200">Failure Rate</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-gray-200">
+            {% for item in top_failure_rate %}
+              <tr class="hover:bg-gray-50">
+                <td class="px-4 py-3 text-center font-bold text-gray-700">{{ forloop.counter }}</td>
+                <td class="px-4 py-3 font-medium text-gray-800">{{ item.part }}</td>
+                <td class="px-4 py-3 text-right font-mono text-gray-700">{{ item.total_plan|floatformat:0 }}</td>
+                <td class="px-4 py-3 text-right font-mono text-red-600 font-bold">{{ item.total_failure|floatformat:0 }}</td>
+                <td class="px-4 py-3 text-center"><span class="inline-block px-3 py-1 rounded-full text-sm font-bold text-white
+                  {% if item.rate > 20 %}bg-red-600
+                  {% elif item.rate > 10 %}bg-orange-600
+                  {% else %}bg-yellow-600{% endif %}">
+                  {{ item.rate|floatformat:1 }}%
+                </span></td>
+              </tr>
+            {% empty %}
+              <tr><td colspan="5" class="px-6 py-10 text-center text-gray-500 italic">No data</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Next 7 Days Table -->
+    <div class="mb-12">
+      <h2 class="text-3xl font-bold text-center text-gray-800 mb-6">Next 7 Days: What Will Happen?</h2>
+      <div class="flex justify-end mb-2">
+        <button class="excel-btn" onclick="exportTableToExcel('next7daysTable', 'Next7Days.xlsx')">Download 7 Days Predictions</button>
+      </div>
+      <div class="bg-red-600 text-white p-5 rounded-t-xl shadow-lg text-center">
+        <p class="text-xl font-bold">
+          You Will Miss <span class="text-3xl ml-2">{{ results.predictions|map:'failure'|sum_values|floatformat:0 }}</span> Parts in 7 Days
+        </p>
+      </div>
+      <div class="bg-white rounded-b-xl shadow-lg overflow-x-auto">
+        <table class="w-full text-sm md:text-base" id="next7daysTable">
+          <thead class="bg-gradient-to-r from-blue-600 to-blue-700 text-white">
+            <tr>
+              <th class="px-4 py-3 text-left font-bold">Part</th>
+              <th class="px-4 py-3 text-center font-bold">Day</th>
+              <th class="px-4 py-3 text-center font-bold">Target</th>
+              <th class="px-4 py-3 text-center font-bold">Will Make</th>
+              <th class="px-4 py-3 text-center font-bold text-red-200">Miss</th>
+              <th class="px-4 py-3 text-center font-bold">Risk</th>
+              <th class="px-4 py-3 text-left font-bold">Reason</th>
+              <th class="px-4 py-3 text-left font-bold">Solution</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-gray-200">
+            {% for pred in results.predictions %}
+              <tr class="hover:bg-gray-50 {% if pred.risk == 'HIGH' %}bg-red-50{% elif pred.risk == 'MED' %}bg-yellow-50{% else %}bg-green-50{% endif %}">
+                <td class="px-4 py-3 font-medium text-gray-800">{{ pred.part }}</td>
+                <td class="px-4 py-3 text-center text-blue-700 font-medium">{{ pred.day }}</td>
+                <td class="px-4 py-3 text-center font-mono">{{ pred.plan|floatformat:0 }}</td>
+                <td class="px-4 py-3 text-center font-mono text-green-700">{{ pred.predicted_actual|floatformat:0 }}</td>
+                <td class="px-4 py-3 text-center font-bold text-red-600">{{ pred.failure|floatformat:0 }}</td>
+                <td class="px-4 py-3 text-center"><span class="px-3 py-1 rounded-full text-xs font-bold text-white {% if pred.risk == 'HIGH' %}bg-red-600{% elif pred.risk == 'MED' %}bg-yellow-600{% else %}bg-green-600{% endif %}">{{ pred.risk }}</span></td>
+                <td class="px-4 py-3 text-left">{{ pred.reason }}</td>
+                <td class="px-4 py-3 text-left">{{ pred.solution }}</td>
+              </tr>
+            {% empty %}
+              <tr><td colspan="8" class="text-center py-8 text-gray-500">No data</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- FULL SCRIPT SECTION -->
+  <script>
+    // Color mapping for waveform chart
+    const waveformColors = {
+      'water pump': ['rgba(34, 197, 94, 0.7)', 'rgba(34, 197, 94, 1)'],
+      'feed pump': ['rgba(34, 197, 94, 0.7)', 'rgba(34, 197, 94, 1)'],
+      'pcn': ['rgba(239, 68, 68, 0.7)', 'rgba(239, 68, 68, 1)'],
+      'COOLANT ELBOW & COVERS': ['rgba(168, 85, 247, 0.7)', 'rgba(168, 85, 247, 1)'],
+      'pulley': ['rgba(245, 158, 11, 0.7)', 'rgba(245, 158, 11, 1)'],
+      'PCN': ['rgba(14, 165, 233, 0.7)', 'rgba(14, 165, 233, 1)'],
+      'sensor': ['rgba(20, 184, 166, 0.7)', 'rgba(20, 184, 166, 1)'],
+      'default': ['rgba(59, 130, 246, 0.7)', 'rgba(59, 130, 246, 1)']
+    };
+
+    function getWaveformColor(category) {
+      const lowerCategory = category.toLowerCase();
+      for (const [key, colors] of Object.entries(waveformColors)) {
+        if (lowerCategory.includes(key)) return colors;
+      }
+      return waveformColors['default'];
+    }
+
+    document.addEventListener('DOMContentLoaded', function () {
+
+      // === TOP 5 PARTS BY TOTAL FAILURES CHART ===
+      const topCtx = document.getElementById('topChart');
+      if (topCtx) {
+        new Chart(topCtx, {
+          type: 'bar',
+          data: {
+            labels: {{ top_labels|safe }},
+            datasets: [{
+              label: 'Total Failures',
+              data: {{ top_values|safe }},
+              backgroundColor: [
+                'rgba(239, 68, 68, 0.8)',
+                'rgba(245, 158, 11, 0.8)',
+                'rgba(251, 191, 36, 0.8)',
+                'rgba(34, 197, 94, 0.8)',
+                'rgba(59, 130, 246, 0.8)'
+              ],
+              borderColor: [
+                'rgb(239, 68, 68)',
+                'rgb(245, 158, 11)',
+                'rgb(251, 191, 36)',
+                'rgb(34, 197, 94)',
+                'rgb(59, 130, 246)'
+              ],
+              borderWidth: 2,
+              borderRadius: 6,
+              borderSkipped: false,
+            }]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+              legend: { display: false },
+              title: {
+                display: true,
+                text: 'Top 5 Parts by Total Failures',
+                font: { size: 16, weight: 'bold' },
+                padding: 20
+              },
+              tooltip: {
+                callbacks: {
+                  label: ctx => `Failures: ${ctx.parsed.y}`
+                }
+              }
+            },
+            scales: {
+              y: {
+                beginAtZero: true,
+                title: { display: true, text: 'Number of Failures', font: { weight: 'bold' } },
+                grid: { color: 'rgba(0, 0, 0, 0.05)' }
+              },
+              x: { grid: { display: false } }
+            },
+            animation: { duration: 1500, easing: 'easeOutQuart' }
+          }
+        });
+      }
+
+      // === WAVEFORM CHART ===
+      const waveformCtx = document.getElementById('waveformChart');
+      if (waveformCtx) {
+        const categories = Object.keys({{ failure_trends|safe }});
+        const allDatasets = [];
+        categories.forEach(category => {
+          const trendData = {{ failure_trends|safe }}[category];
+          const [backgroundColor, borderColor] = getWaveformColor(category);
+          const waveformData = [];
+          trendData.plan_values.forEach((plan, index) => {
+            let failureRate = trendData.failure_rates[index] || 0;
+            if (failureRate <= 1) {
+              failureRate = failureRate * 100;
+            }
+            const actual = trendData.actual_values[index] || 0;
+            const failureNum = trendData.failure_values ? trendData.failure_values[index] : '';
+            if (plan > 0 && failureRate > 0) {
+              waveformData.push({
+                x: plan,
+                y: failureRate,
+                actual: actual,
+                category: category,
+                failure: failureNum
+              });
+            }
+          });
+          waveformData.sort((a, b) => a.x - b.x);
+          allDatasets.push({
+            label: `${category} Failure Pattern`,
+            data: waveformData,
+            type: 'line',
+            borderColor: borderColor,
+            backgroundColor: backgroundColor,
+            borderWidth: 3,
+            tension: 0.4,
+            fill: false,
+            pointRadius: 5,
+            pointHoverRadius: 8,
+            pointBackgroundColor: borderColor,
+            pointBorderColor: '#ffffff',
+            pointBorderWidth: 2
+          });
+          allDatasets.push({
+            label: `${category} Data Points`,
+            data: waveformData,
+            type: 'scatter',
+            backgroundColor: backgroundColor,
+            borderColor: borderColor,
+            borderWidth: 2,
+            pointRadius: 4,
+            pointHoverRadius: 7,
+            showLine: false
+          });
+        });
+
+        new Chart(waveformCtx, {
+          type: 'scatter',
+          data: { datasets: allDatasets },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+              title: {
+                display: true,
+                text: 'Failure Rate vs Production Plan Analysis',
+                font: { size: 18, weight: 'bold' }
+              },
+              tooltip: {
+                filter: ctx => ctx.dataset.type === 'scatter',
+                callbacks: {
+                  label: ctx => {
+                    const d = ctx.raw;
+                    return [
+                      `Part: ${d.category}`,
+                      `Plan: ${d.x}`,
+                      `Failure: ${d.failure}`,
+                      `Failure Rate: ${d.y}%`,
+                      `Actual: ${d.actual}`
+                    ];
+                  }
+                }
+              },
+              legend: {
+                position: 'top',
+                labels: {
+                  boxWidth: 12,
+                  padding: 15,
+                  font: { size: 11 },
+                  filter: item => !item.text.includes('Data Points')
+                }
+              }
+            },
+            scales: {
+              y: {
+                beginAtZero: true,
+                title: { display: true, text: 'Failure Rate (%)', font: { weight: 'bold', size: 14 } },
+                grid: { color: 'rgba(0, 0, 0, 0.1)' },
+                ticks: { callback: val => val + '%' }
+              },
+              x: {
+                beginAtZero: true,
+                title: { display: true, text: 'Production Plan Quantity', font: { weight: 'bold', size: 14 } },
+                grid: { color: 'rgba(0, 0, 0, 0.05)' }
+              }
+            },
+            interaction: { intersect: false, mode: 'nearest' },
+            elements: { line: { tension: 0.4 } }
+          }
+        });
+      }
+
+      // === GLOBAL SEARCH ===
+      const searchInput = document.getElementById('globalSearch');
+      const rows = document.querySelectorAll('#regBody tr, #clfBody tr, #failureRateTable tbody tr, #next7daysTable tbody tr');
+
+      searchInput.addEventListener('input', function () {
+        const query = this.value.toLowerCase().trim();
+        rows.forEach(row => {
+          const text = row.textContent.toLowerCase();
+          row.style.display = text.includes(query) ? '' : 'none';
+        });
+      });
+
+      // === PDF DOWNLOAD ===
+      document.getElementById('downloadBtn').addEventListener('click', function () {
+        const element = document.getElementById('dashboard-content');
+        html2pdf()
+          .from(element)
+          .set({ 
+            margin: 1, 
+            filename: 'AI_Dashboard_Report.pdf', 
+            html2canvas: { scale: 2 }, 
+            jsPDF: { unit: 'in', format: 'a3', orientation: 'portrait' }
+          })
+          .save();
+      });
+
+      // === EXPORT TO EXCEL ===
+      function exportTableToExcel(tableId, filename) {
+        const table = document.getElementById(tableId);
+        const wb = XLSX.utils.table_to_book(table, { sheet: "Sheet1" });
+        XLSX.writeFile(wb, filename);
+      }
+
+      window.exportTableToExcel = exportTableToExcel;
+
+      function exportPlanActualDataToExcel() {
+        const data = [];
+        const categories = Object.keys({{ failure_trends|safe }});
+        categories.forEach(cat => {
+          const trend = {{ failure_trends|safe }}[cat];
+          trend.plan_values.forEach((plan, i) => {
+            data.push({
+              Part: cat,
+              Date: trend.dates[i],
+              Plan: plan,
+              Actual: trend.actual_values[i],
+              Failure: trend.failure_values[i],
+              'Failure Rate (%)': trend.failure_rates[i]
+            });
+          });
+        });
+        const ws = XLSX.utils.json_to_sheet(data);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, "Failure Trends");
+        XLSX.writeFile(wb, "FailureTrends.xlsx");
+      }
+
+      window.exportPlanActualDataToExcel = exportPlanActualDataToExcel;
+
+    });
+  </script>
+
+</body>
+</html>

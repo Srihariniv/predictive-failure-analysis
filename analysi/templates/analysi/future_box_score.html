@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Future Box Score</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <style>
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            min-width: 900px;
+        }
+
+        thead th {
+            background: #bbf7d0;
+            color: #064e3b;
+            padding: 12px;
+            font-weight: 700;
+            border-bottom: 2px solid #86efac;
+            text-align: center;
+        }
+
+        tbody td {
+            padding: 12px;
+            border-bottom: 1px solid #e5e7eb;
+            text-align: center;
+            color: #064e3b;
+            font-weight: 500;
+        }
+
+        tbody tr:nth-child(even) {
+            background: #f0fdf4;
+        }
+
+        tbody tr:hover {
+            background: #dcfce7;
+            transition: 0.3s;
+        }
+
+        .table-container {
+            overflow-x: auto;
+            margin-top: 12px;
+        }
+
+        /* ⭐ weekly category inner table fix */
+        .week-category-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+        }
+
+        .week-category-table th,
+        .week-category-table td {
+            padding: 8px;
+            border: 1px solid #d1d5db;
+            text-align: center;
+        }
+    </style>
+</head>
+
+<body class="bg-gray-100">
+
+<nav class="bg-gradient-to-r from-teal-600 to-teal-700 text-white shadow-lg">
+    <div class="container mx-auto px-6 py-4 flex justify-between items-center">
+        <a href="{% url 'home' %}" class="text-2xl font-bold">Predictive Failure Analysis Using AI</a>
+        <div class="flex gap-6 text-sm font-semibold">
+            <a href="{% url 'dashboard' %}" class="hover:text-yellow-300">Dashboard</a>
+            <a href="{% url 'upload_file' %}" class="hover:text-yellow-300">Upload</a>
+            <a href="{% url 'raw_data' %}" class="hover:text-yellow-300">Raw Data</a>
+            <a href="{% url 'profit_analysis' %}"
+               class="{% if request.resolver_match.url_name == 'profit_analysis' %}text-yellow-300 underline{% endif %}">
+               Profit Analysis
+            </a>
+            <a href="{% url 'future_predictions' %}" class="hover:text-yellow-300">Future</a>
+            <a href="{% url 'future_box_score' %}"
+               class="{% if request.resolver_match.url_name == 'future_box_score' %}text-yellow-300 underline{% endif %}">
+               Future Box Score
+            </a>
+        </div>
+    </div>
+</nav>
+
+<div class="max-w-7xl mx-auto py-10 px-8 bg-white shadow-lg rounded-2xl mt-8">
+<h2 class="text-3xl font-bold text-green-900 text-center mb-6 tracking-wide">
+    📅 Future Predictions – Day Wise
+</h2>
+    {% for day in future_day_tables %}
+
+    <div class="mt-10 rounded-2xl p-6 shadow-md border border-green-200 bg-green-50">
+        
+
+        <h2 class="text-2xl font-bold text-green-800 text-center mb-4 tracking-wide">
+            {{ day.day }}
+        </h2>
+
+        <div class="table-container">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Prediction</th>
+                        {% for row in day.rows %}
+                            <th>{{ row.category }}</th>
+                        {% endfor %}
+                    </tr>
+                </thead>
+
+                <tbody>
+                    <tr>
+                        <td class="font-semibold">Current Productive</td>
+                        {% for row in day.rows %}
+                            <td>{{ row.current_productive }}</td>
+                        {% endfor %}
+                    </tr>
+
+                    <tr class="font-semibold text-green-700">
+                        <td>Future Productive</td>
+                        {% for row in day.rows %}
+                            <td>{{ row.future_productive }}</td>
+                        {% endfor %}
+                    </tr>
+
+                    <tr>
+                        <td class="font-semibold">Current Revenue</td>
+                        {% for row in day.rows %}
+                            <td>{{ row.current_revenue }}</td>
+                        {% endfor %}
+                    </tr>
+
+                    <tr class="font-semibold text-green-800">
+                        <td>Future Revenue</td>
+                        {% for row in day.rows %}
+                            <td>{{ row.future_revenue }}</td>
+                        {% endfor %}
+                    </tr>
+
+                    <tr class="font-bold text-red-600">
+                        <td>Expected Profit</td>
+                        {% for row in day.rows %}
+                            <td>{{ row.future_profit }}</td>
+                        {% endfor %}
+                    </tr>
+
+                </tbody>
+            </table>
+        </div>
+
+    </div>
+
+    {% endfor %}
+
+   
+
+       
+
+  <!-- WEEK SUMMARY -->
+
+<br><div>
+   <!-- WEEK SUMMARY -->
+<div class="mt-20">
+    
+    <h2 class="text-3xl font-bold text-green-900 text-center mb-6 tracking-wide">
+        📅 Future Weekly Profit by Category
+    </h2>
+
+    {% for week in weekly_summary %}
+
+    <div class="mt-10 rounded-2xl p-6 shadow-md border border-green-200 bg-green-50">
+
+        <h2 class="text-2xl font-bold text-green-800 text-center mb-4 tracking-wide">
+            Week-{{ forloop.counter }} 
+        </h2>
+
+        <div class="table-container">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Prediction</th>
+                        {% for c in week.category_summary %}
+                        <th>{{ c.category }}</th>
+                        {% endfor %}
+                    </tr>
+                </thead>
+
+                <tbody>
+                    <tr>
+                        <td class="font-semibold">Total Productive</td>
+                        {% for c in week.category_summary %}
+                        <td>{{ c.productive }}</td>
+                        {% endfor %}
+                    </tr>
+
+                    <tr>
+                        <td class="font-semibold">Total Revenue</td>
+                        {% for c in week.category_summary %}
+                        <td>{{ c.revenue }}</td>
+                        {% endfor %}
+                    </tr>
+
+                    <tr class="font-bold text-red-600">
+                        <td>Total Profit</td>
+                        {% for c in week.category_summary %}
+                        <td>{{ c.profit }}</td>
+                        {% endfor %}
+                    </tr>
+
+                </tbody>
+            </table>
+        </div>
+
+    </div>
+
+    {% endfor %}
+</div>
+
+
+</div>
+
+</div>
+
+
+    
+
+
+</body>
+</html>

@@ -1,0 +1,428 @@
+
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-12">
+            <div class="d-sm-flex align-items-center justify-content-between mb-4">
+                <h1 class="h3 mb-0 text-gray-800">Production Analytics Charts</h1>
+                <div>
+                    <span class="badge bg-info text-dark">File: {{ latest_file }}</span>
+                    <a href="{% url 'dashboard' %}" class="btn btn-primary btn-sm ml-2">
+                        <i class="fas fa-arrow-left"></i> Back to Dashboard
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Charts Section -->
+    <div class="row">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header bg-primary text-white">
+                    <h4 class="mb-0"><i class="fas fa-chart-line me-2"></i>Production Analytics Dashboard</h4>
+                </div>
+                <div class="card-body">
+                    
+                    <!-- Overview Cards -->
+                    <div class="row mb-4">
+                        <div class="col-md-3">
+                            <div class="card text-white bg-success">
+                                <div class="card-body">
+                                    <h6 class="card-title">Total Plan</h6>
+                                    <h3>{{ production_overview.total_plan|floatformat:0 }}</h3>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="card text-white bg-info">
+                                <div class="card-body">
+                                    <h6 class="card-title">Total Actual</h6>
+                                    <h3>{{ production_overview.total_actual|floatformat:0 }}</h3>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="card text-white bg-warning">
+                                <div class="card-body">
+                                    <h6 class="card-title">Total Failure</h6>
+                                    <h3>{{ production_overview.total_failure|floatformat:0 }}</h3>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="card text-white bg-danger">
+                                <div class="card-body">
+                                    <h6 class="card-title">Efficiency Rate</h6>
+                                    <h3>{{ production_overview.efficiency_rate }}%</h3>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Charts Row 1 -->
+                    <div class="row">
+                        <!-- Failure Rate Trends -->
+                        <div class="col-md-8">
+                            <div class="chart-container card">
+                                <div class="card-header">
+                                    <h5 class="card-title mb-0">Failure Rate Trends Over Time</h5>
+                                </div>
+                                <div class="card-body">
+                                    <canvas id="failureTrendsChart" height="250"></canvas>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Risk Distribution -->
+                        <div class="col-md-4">
+                            <div class="chart-container card">
+                                <div class="card-header">
+                                    <h5 class="card-title mb-0">Risk Level Distribution</h5>
+                                </div>
+                                <div class="card-body">
+                                    <canvas id="riskDistributionChart" height="250"></canvas>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Charts Row 2 -->
+                    <div class="row mt-4">
+                        <!-- Category Comparison -->
+                        <div class="col-md-6">
+                            <div class="chart-container card">
+                                <div class="card-header">
+                                    <h5 class="card-title mb-0">Failure Rate by Category</h5>
+                                </div>
+                                <div class="card-body">
+                                    <canvas id="categoryComparisonChart" height="250"></canvas>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Production Overview -->
+                        <div class="col-md-6">
+                            <div class="chart-container card">
+                                <div class="card-header">
+                                    <h5 class="card-title mb-0">Production Overview</h5>
+                                </div>
+                                <div class="card-body">
+                                    <canvas id="productionOverviewChart" height="250"></canvas>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Charts Row 3 -->
+                    <div class="row mt-4">
+                        <!-- Category Performance -->
+                        <div class="col-md-12">
+                            <div class="chart-container card">
+                                <div class="card-header">
+                                    <h5 class="card-title mb-0">Category Performance (Plan vs Actual vs Failure)</h5>
+                                </div>
+                                <div class="card-body">
+                                    <canvas id="categoryPerformanceChart" height="300"></canvas>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Chart.js Library -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<script>
+// Color palette for charts
+const colorPalette = [
+    '#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0', '#9966FF',
+    '#FF9F40', '#8AC926', '#1982C4', '#7CFFB2', '#6A4C93'
+];
+
+function getColor(index, opacity = 1) {
+    const color = colorPalette[index % colorPalette.length];
+    if (opacity === 1) return color;
+    const rgb = color.replace('#', '');
+    const r = parseInt(rgb.substr(0, 2), 16);
+    const g = parseInt(rgb.substr(2, 2), 16);
+    const b = parseInt(rgb.substr(4, 2), 16);
+    return `rgba(${r}, ${g}, ${b}, ${opacity})`;
+}
+
+// Wait for DOM to be fully loaded
+document.addEventListener('DOMContentLoaded', function() {
+    
+    // 1. Failure Trends Chart
+    const failureTrendsCtx = document.getElementById('failureTrendsChart');
+    if (failureTrendsCtx) {
+        const datasets = [];
+        let categoryIndex = 0;
+        
+        // Create datasets for each category
+        {% for category, data in failure_trends.items %}
+        datasets.push({
+            label: '{{ category }}',
+            data: {{ data.failure_rates }},
+            borderColor: getColor(categoryIndex),
+            backgroundColor: getColor(categoryIndex, 0.1),
+            tension: 0.4,
+            borderWidth: 2,
+            fill: true
+        });
+        {% endfor %}
+
+        new Chart(failureTrendsCtx, {
+            type: 'line',
+            data: {
+                labels: {{ common_dates|safe }},
+                datasets: datasets
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    title: {
+                        display: true,
+                        text: 'Failure Rate Trends Over Time (%)'
+                    },
+                    tooltip: {
+                        mode: 'index',
+                        intersect: false
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        title: {
+                            display: true,
+                            text: 'Failure Rate (%)'
+                        }
+                    },
+                    x: {
+                        title: {
+                            display: true,
+                            text: 'Date'
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    // 2. Risk Distribution Chart
+    const riskDistributionCtx = document.getElementById('riskDistributionChart');
+    if (riskDistributionCtx) {
+        new Chart(riskDistributionCtx, {
+            type: 'doughnut',
+            data: {
+                labels: ['Low Risk', 'Medium Risk', 'High Risk'],
+                datasets: [{
+                    data: [
+                        {{ risk_distribution.LOW }},
+                        {{ risk_distribution.MED }}, 
+                        {{ risk_distribution.HIGH }}
+                    ],
+                    backgroundColor: ['#4caf50', '#ff9800', '#f44336'],
+                    borderWidth: 2,
+                    borderColor: '#fff'
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        position: 'bottom',
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                const total = {{ risk_distribution.LOW }} + {{ risk_distribution.MED }} + {{ risk_distribution.HIGH }};
+                                const percentage = total > 0 ? ((context.parsed / total) * 100).toFixed(1) : 0;
+                                return `${context.label}: ${context.parsed} (${percentage}%)`;
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    // 3. Category Comparison Chart
+    const categoryComparisonCtx = document.getElementById('categoryComparisonChart');
+    if (categoryComparisonCtx) {
+        new Chart(categoryComparisonCtx, {
+            type: 'bar',
+            data: {
+                labels: {{ category_labels|safe }},
+                datasets: [{
+                    label: 'Failure Rate (%)',
+                    data: {{ category_rates|safe }},
+                    backgroundColor: colorPalette.slice(0, {{ category_labels|length }}),
+                    borderColor: colorPalette.slice(0, {{ category_labels|length }}).map(color => color + 'DD'),
+                    borderWidth: 1
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        title: {
+                            display: true,
+                            text: 'Failure Rate (%)'
+                        }
+                    }
+                },
+                plugins: {
+                    tooltip: {
+                        callbacks: {
+                            afterLabel: function(context) {
+                                const failures = {{ category_failures|safe }};
+                                return `Total Failures: ${failures[context.dataIndex].toLocaleString()}`;
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    // 4. Production Overview Chart
+    const productionOverviewCtx = document.getElementById('productionOverviewChart');
+    if (productionOverviewCtx) {
+        new Chart(productionOverviewCtx, {
+            type: 'bar',
+            data: {
+                labels: ['Plan', 'Actual', 'Failure'],
+                datasets: [{
+                    label: 'Production Units',
+                    data: [
+                        {{ production_overview.total_plan }},
+                        {{ production_overview.total_actual }},
+                        {{ production_overview.total_failure }}
+                    ],
+                    backgroundColor: ['#36A2EB', '#4BC0C0', '#FF6384'],
+                    borderColor: ['#36A2EB', '#4BC0C0', '#FF6384'],
+                    borderWidth: 1
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        title: {
+                            display: true,
+                            text: 'Number of Units'
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    // 5. Category Performance Chart
+    const categoryPerformanceCtx = document.getElementById('categoryPerformanceChart');
+    if (categoryPerformanceCtx) {
+        
+        const categoryLabels = [];
+        const planData = [];
+        const actualData = [];
+        const failureData = [];
+        
+        {% for performance in category_performance %}
+        categoryLabels.push('{{ performance.category }}');
+        planData.push({{ performance.plan }});
+        actualData.push({{ performance.actual }});
+        failureData.push({{ performance.failure }});
+        {% endfor %}
+
+        new Chart(categoryPerformanceCtx, {
+            type: 'bar',
+            data: {
+                labels: categoryLabels,
+                datasets: [
+                    {
+                        label: 'Plan',
+                        data: planData,
+                        backgroundColor: '#36A2EB',
+                        borderColor: '#36A2EB',
+                        borderWidth: 1
+                    },
+                    {
+                        label: 'Actual',
+                        data: actualData,
+                        backgroundColor: '#4BC0C0',
+                        borderColor: '#4BC0C0',
+                        borderWidth: 1
+                    },
+                    {
+                        label: 'Failure',
+                        data: failureData,
+                        backgroundColor: '#FF6384',
+                        borderColor: '#FF6384',
+                        borderWidth: 1
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    x: {
+                        stacked: false,
+                    },
+                    y: {
+                        stacked: false,
+                        beginAtZero: true,
+                        title: {
+                            display: true,
+                            text: 'Number of Units'
+                        }
+                    }
+                }
+            }
+        });
+    }
+});
+</script>
+
+<style>
+.chart-container {
+    background: white;
+    border-radius: 8px;
+    margin-bottom: 20px;
+}
+
+.chart-container .card {
+    border: 1px solid #e3e6f0;
+    border-radius: 0.35rem;
+    box-shadow: 0 0.15rem 1.75rem 0 rgba(58, 59, 69, 0.15);
+}
+
+.chart-container .card-header {
+    background-color: #f8f9fc;
+    border-bottom: 1px solid #e3e6f0;
+    font-weight: 600;
+}
+
+canvas {
+    max-width: 100%;
+    height: auto !important;
+}
+
+.card.text-white .card-body h3 {
+    font-weight: 700;
+}
+</style>
+{% endblock %}

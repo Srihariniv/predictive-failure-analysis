@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <title>Upload File</title>
+</head>
+<body class="bg-gray-100">
+ <nav class="bg-gradient-to-r from-teal-600 to-teal-700 text-white shadow-lg">
+  <div class="container mx-auto px-6 py-4 flex justify-between items-center">
+    <!-- Logo -->
+    <a href="{% url 'home' %}" class="text-2xl font-bold flex items-center gap-2">
+      Predictive Failure Analysis Using AI
+    </a>
+
+    <!-- Navbar Links -->
+    <div class="flex gap-6 text-sm">
+      
+      <a href="{% url 'dashboard' %}" class="hover:underline">Dashboard</a>
+      <a href="{% url 'upload_file' %}" class="hover:underline">Upload</a>
+      <a href="{% url 'raw_data' %}" class="hover:underline">Raw Data</a>
+      <a href="{% url 'algorithms' %}" class="hover:underline">Algorithms</a>
+      <a href="{% url 'profit_analysis' %}"
+   class="hover:underline {% if request.resolver_match.url_name == 'profit_analysis' %}font-bold text-yellow-300 underline{% endif %}">
+   Profit Analysis
+</a>
+      <a href="{% url 'future_predictions' %}" class="btn btn-primary">Future Predictions ( 30 Days)</a>
+      <a href="{% url 'future_box_score' %}"
+               class="{% if request.resolver_match.url_name == 'future_box_score' %}text-yellow-300 underline{% endif %}">
+               Future Profit
+            </a>
+       <!---<a href="{% url 'delete_page' %}" class="hover:underline text-red-200 font-semibold">Delete</a>-->
+    
+      
+    </div>
+  </div>
+</nav>
+
+  <div class="container mx-auto p-10">
+    <div class="bg-white rounded-xl shadow-2xl p-10 max-w-md mx-auto">
+      <h2 class="text-3xl font-bold text-center mb-6 text-teal-600">Upload Box Score Excel</h2>
+      <form method="post" enctype="multipart/form-data" class="space-y-6">
+        {% csrf_token %}
+        <div class="border-2 border-dashed border-teal-400 rounded-lg p-10 text-center">
+          {{ form.file }}
+        </div>
+        <button type="submit" class="w-full bg-teal-600 text-white py-4 rounded-lg font-bold text-xl hover:bg-teal-700 transition">
+          🚀 ANALYZE NOW
+        </button>
+        
+      </form>
+
+      {% if messages %}
+        {% for message in messages %}
+          <div class="mt-6 p-4 rounded-lg text-white font-bold text-center {% if 'success' in message.tags %}bg-green-500{% else %}bg-red-500{% endif %}">
+            {{ message }}
+          </div>
+        {% endfor %}
+      {% endif %}
+    </div>
+  </div>
+</body>
+</html>

@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>All Algorithms - Clean View</title>
+
+  <!-- Tailwind -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <style>
+    .table-container { max-height: 600px; overflow-y: auto; }
+    th, td { padding: 12px 16px !important; font-size: 16px; }
+    th { background: #e5e7eb; font-weight: bold; }
+    tr:hover { background: #f3f4f6; }
+
+    /* Borders */
+    .best-algorithm { border: 3px solid #10b981; box-shadow: 0 10px 25px rgba(16,185,129,.3); }
+    .average-algorithm { border: 1px solid #d1d5db; }
+  </style>
+</head>
+
+<body class="bg-gradient-to-br from-gray-50 to-gray-200 min-h-screen">
+
+<!-- ================= NAVBAR ================= -->
+<nav class="bg-gradient-to-r from-teal-600 to-teal-700 text-white shadow-lg relative z-50">
+  <div class="container mx-auto px-6 py-4 flex justify-between items-center">
+    <a href="{% url 'home' %}" class="text-2xl font-bold">
+     Predictive Failure Analysis Using AI
+    </a>
+
+    <div class="flex gap-6 text-sm">
+      <a href="{% url 'dashboard' %}" class="hover:underline">Dashboard</a>
+      <a href="{% url 'upload_file' %}" class="hover:underline">Upload</a>
+      <a href="{% url 'raw_data' %}" class="hover:underline">Raw Data</a>
+      <a href="{% url 'algorithms' %}" class="hover:underline font-bold underline">Algorithms</a>
+      <a href="{% url 'profit_analysis' %}"
+   class="hover:underline {% if request.resolver_match.url_name == 'profit_analysis' %}font-bold text-yellow-300 underline{% endif %}">
+   Profit Analysis
+</a>
+      <a href="{% url 'future_predictions' %}" class="hover:underline">Future (30 Days)</a>
+      <a href="{% url 'future_box_score' %}"
+               class="{% if request.resolver_match.url_name == 'future_box_score' %}text-yellow-300 underline{% endif %}">
+               Future Profit
+            </a>
+    </div>
+  </div>
+</nav>
+
+<!-- ================= CONTENT ================= -->
+<div class="container mx-auto p-8">
+
+  <!-- HEADER -->
+  <div class="text-center mb-10">
+    <h2 class="text-4xl font-bold text-teal-700">
+      Analyzing: <span class="text-gray-800">{{ latest_file }}</span>
+    </h2>
+    <p class="text-xl text-gray-600 mt-2">
+      Same Algorithms → Regression & Classification
+    </p>
+  </div>
+
+  <!-- ================= REGRESSION ================= -->
+  <h3 class="text-2xl font-bold text-teal-800 mb-6 text-center">
+    REGRESSION (Predict Failure Amount)
+  </h3>
+
+  <div class="grid grid-cols-1 lg:grid-cols-2 2xl:grid-cols-4 gap-8 mb-12">
+    {% for algo, scores in reg_data.items %}
+    <div class="bg-white rounded-2xl shadow-2xl overflow-hidden
+                {% if scores %}best-algorithm{% else %}average-algorithm{% endif %}">
+
+      <div class="bg-gradient-to-r from-teal-600 to-teal-800 text-white p-6 text-center">
+        <h3 class="text-2xl font-bold">{{ algo }}</h3>
+        <p class="text-sm opacity-90">MAE (Lower is Better)</p>
+      </div>
+
+      <div class="table-container">
+        <table class="w-full">
+          <thead>
+            <tr>
+              <th class="text-left">Part</th>
+              <th class="text-right">MAE</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for s in scores %}
+            <tr>
+              <td class="text-left">
+                {{ s.part }}
+                {% if s.best %}
+                  <span class="bg-yellow-200 text-yellow-800 text-xs px-2 py-1 rounded ml-2">
+                    Best
+                  </span>
+                {% endif %}
+              </td>
+              <td class="text-right font-mono">
+                {{ s.mae|floatformat:2 }}
+              </td>
+            </tr>
+            {% empty %}
+            <tr>
+              <td colspan="2" class="text-center text-gray-500 py-4">
+                No data
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+      {% if scores %}
+      <div class="bg-gray-50 p-4 text-center">
+        <span class="text-sm font-bold text-green-600">
+          Best: {{ scores.0.part }} ({{ scores.0.mae|floatformat:2 }})
+        </span>
+      </div>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+
+  <!-- ================= CLASSIFICATION ================= -->
+  <h3 class="text-2xl font-bold text-purple-800 mb-6 text-center">
+    CLASSIFICATION (Predict Risk Level)
+  </h3>
+
+  <div class="grid grid-cols-1 lg:grid-cols-2 2xl:grid-cols-4 gap-8">
+    {% for algo, scores in clf_data.items %}
+    <div class="bg-white rounded-2xl shadow-2xl overflow-hidden
+                {% if scores %}best-algorithm{% else %}average-algorithm{% endif %}">
+
+      <div class="bg-gradient-to-r from-purple-600 to-purple-800 text-white p-6 text-center">
+        <h3 class="text-2xl font-bold">{{ algo }}</h3>
+        <p class="text-sm opacity-90">Accuracy % (Higher is Better)</p>
+      </div>
+
+      <div class="table-container">
+        <table class="w-full">
+          <thead>
+            <tr>
+              <th class="text-left">Part</th>
+              <th class="text-right">Accuracy</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for s in scores %}
+            <tr>
+              <td class="text-left">
+                {{ s.part }}
+                {% if s.best %}
+                  <span class="bg-yellow-200 text-yellow-800 text-xs px-2 py-1 rounded ml-2">
+                    Best
+                  </span>
+                {% endif %}
+              </td>
+              <td class="text-right font-mono">
+                {{ s.acc }}%
+              </td>
+            </tr>
+            {% empty %}
+            <tr>
+              <td colspan="2" class="text-center text-gray-500 py-4">
+                No data
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+      {% if scores %}
+      <div class="bg-gray-50 p-4 text-center">
+        <span class="text-sm font-bold text-green-600">
+          Best: {{ scores.0.part }} ({{ scores.0.acc }}%)
+        </span>
+      </div>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+
+</div>
+
+</body>
+</html>

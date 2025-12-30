@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="en" class="scroll-smooth">
+<head>
+  <meta charset="UTF-8" />
+  <title>Future Predictions – {{ latest_file }}</title>
+  <!-- Tailwind CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Chart.js CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <!-- Font -->
+  <link href="https://fonts.googleapis.com/css2?family=Poppins&display=swap" rel="stylesheet" />
+  <style>
+    body { font-family: 'Poppins', sans-serif; }
+    /* Scrollbar styles for table */
+    .scroll-container {
+      overflow: auto;
+      max-height: 70vh;
+      border-radius: 10px;
+    }
+    .scroll-container::-webkit-scrollbar {
+      height: 10px; width: 10px;
+    }
+    .scroll-container::-webkit-scrollbar-thumb {
+      background-color: rgba(13, 148, 136, 0.6);
+      border-radius: 10px;
+    }
+    .scroll-container::-webkit-scrollbar-thumb:hover {
+      background-color: rgba(13, 148, 136, 0.8);
+    }
+    /* Sticky headers table */
+    th {
+      position: sticky; top: 0;
+      background-color: #ccf; z-index: 2;
+    }
+  </style>
+</head>
+<body class="bg-gradient-to-br from-gray-50 via-teal-50 to-white min-h-screen">
+
+  <!-- Navbar -->
+  <nav class="bg-gradient-to-r from-teal-600 to-teal-700 text-white shadow-lg">
+    <div class="container mx-auto px-6 py-4 flex justify-between items-center">
+      <a href="{% url 'home' %}" class="text-2xl font-bold">Predictive Failure Analysis Using AI</a>
+      <div class="flex gap-6 text-sm">
+        <a href="{% url 'dashboard' %}" class="hover:underline font-bold">Dashboard</a>
+        <a href="{% url 'upload_file' %}" class="hover:underline">Upload</a>
+        <a href="{% url 'raw_data' %}" class="hover:underline">Raw Data</a>
+        
+        <a href="{% url 'algorithms' %}" class="hover:underline">Algorithms</a>
+        <a href="{% url 'profit_analysis' %}"
+   class="hover:underline {% if request.resolver_match.url_name == 'profit_analysis' %}font-bold text-yellow-300 underline{% endif %}">
+   Profit Analysis
+</a>
+        <a href="{% url 'future_predictions' %}" class="hover:underline">Future (30 Days)</a>
+        <a href="{% url 'future_box_score' %}"
+               class="{% if request.resolver_match.url_name == 'future_box_score' %}text-yellow-300 underline{% endif %}">
+               Future Profit
+            </a>
+        <!---<a href="{% url 'delete_page' %}" class="hover:underline text-red-200 font-semibold">Delete</a>-->
+      </div>
+    </div>
+  </nav>
+
+  <div class="container mx-auto px-6 py-10">
+    <h2 class="text-4xl font-bold text-teal-700 mb-2 text-center">Future Predictions</h2>
+    <p class="text-center text-gray-600 mb-10"><strong>File:</strong> {{ latest_file }}</p>
+
+    <!-- Summary Cards -->
+    
+
+    <!-- Graph for Failure Over Days -->
+    <h3 class="text-2xl font-semibold mb-4 text-center">Failure Trend by Category (Next 30 Days)</h3>
+    <div class="mx-auto max-w-6xl mb-10 bg-white p-6 rounded-xl shadow-lg">
+      <canvas id="failureChart" height="100"></canvas>
+    </div>
+<!-- Recurring Failure Reasons & Production Impact -->
+<h3 class="text-2xl font-semibold mb-4 text-center mt-10">Recurring Failure Reasons & Production Impact</h3>
+<div class="max-w-5xl mx-auto mb-12 bg-white rounded-xl shadow-lg p-4">
+  {% for cat, rows in reason_table.items %}
+    <h4 class="mt-6 mb-2 text-lg font-bold text-teal-700">{{ cat }}</h4>
+    <table class="min-w-full border text-sm mb-4 bg-white shadow-sm rounded-lg">
+      <thead>
+        <tr class="bg-teal-100">
+          <th class="px-4 py-2">Reason</th>
+          
+          <th class="px-4 py-2 text-right">Predicted Production If Solved</th>
+          
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in rows %}
+        <tr>
+          <td class="px-4 py-2">{{ r.reason }}</td>
+          
+          <td class="px-4 py-2 text-right font-semibold">{{ r.future_actual }}</td>
+          
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% endfor %}
+</div>
+
+    <!-- Table of Predictions -->
+    <!-- Main 30-Day Predictions Table – ZERO GAP FIX -->
+<div class="bg-white rounded-2xl shadow-2xl overflow-hidden mb-12">
+  <!-- Header -->
+  <div class="bg-gradient-to-r from-teal-600 to-emerald-600 text-white px-8 py-6 flex justify-between items-center">
+    <h3 class="text-2xl font-bold">Next 30 Days Detailed Forecast</h3>
+    <button id="exportExcel" class="bg-white text-teal-700 px-6 py-3 rounded-xl font-bold hover:bg-gray-100 transition flex items-center gap-2 shadow-md">
+      Export to Excel
+    </button>
+  </div>
+
+  <!-- Table container – REMOVED p-6 and any margin/padding here -->
+  <div class="scroll-container -mt-1">  <!-- ← this -mt-1 removes the tiny white gap -->
+    <table id="predictionsTable" class="w-full text-sm md:text-base">
+      <thead>
+        <tr class="bg-gradient-to-r from-teal-100 to-cyan-100 text-teal-800">
+          <th class="px-6 py-5 text-left font-bold">Day</th>
+          <th class="px-6 py-5 text-left font-bold">Part</th>
+          <th class="px-6 py-5 text-center font-bold">Plan</th>
+          <th class="px-6 py-5 text-center font-bold">Will Make</th>
+          <th class="px-6 py-5 text-center font-bold text-red-700">Miss</th>
+          <th class="px-6 py-5 text-center font-bold">Risk</th>
+          <th class="px-6 py-5 text-left font-bold">Main Reason</th>
+          <th class="px-6 py-5 text-left font-bold">Recommended Action</th>
+        </tr>
+      </thead>
+      <tbody class="bg-white divide-y divide-gray-200">
+        {% for p in thirty_day %}
+        <tr class="
+          {% if p.risk == 'HIGH' %}bg-red-50 hover:bg-red-100
+          {% elif p.risk == 'MED' %}bg-yellow-50 hover:bg-yellow-100
+          {% else %}bg-green-50 hover:bg-green-100{% endif %}
+          transition-all duration-200
+        ">
+          <td class="px-6 py-4 font-bold text-gray-800">{{ p.day }}</td>
+          <td class="px-6 py-4 font-semibold text-gray-900">{{ p.part }}</td>
+          <td class="px-6 py-4 text-center font-mono text-gray-700">{{ p.plan|floatformat:0 }}</td>
+          <td class="px-6 py-4 text-center font-mono text-green-700 font-bold">{{ p.predicted_actual|floatformat:0 }}</td>
+          <td class="px-6 py-4 text-center text-2xl font-bold text-red-600">{{ p.failure|floatformat:0 }}</td>
+          <td class="px-6 py-4 text-center">
+            <span class="px-4 py-2 rounded-full text-xs font-bold
+              {% if p.risk == 'HIGH' %}bg-red-600 text-white
+              {% elif p.risk == 'MED' %}bg-yellow-600 text-white
+              {% else %}bg-green-600 text-white{% endif %}">
+              {{ p.risk }}
+            </span>
+          </td>
+          <td class="px-6 py-4 text-gray-700">{{ p.reason }}</td>
+          <td class="px-6 py-4 text-teal-700 font-medium">{{ p.solution }}</td>
+        </tr>
+        {% empty %}
+        <tr>
+          <td colspan="8" class="text-center py-12 text-gray-500 text-lg">No forecast data available yet.</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+    <!-- Back Button -->
+    <div class="text-center mt-10">
+      <a href="{% url 'dashboard' %}" class="inline-block bg-teal-600 text-white px-8 py-3 rounded-xl hover:bg-teal-700 transition">Back to Dashboard</a>
+    </div>
+  </div>
+
+  <!-- Chart.js script to render graph -->
+  <script>
+    console.log('Chart days:', {{ failures_days|safe }});
+    console.log('Chart datasets:', {{ chart_datasets_json|safe }});
+
+    const ctx = document.getElementById('failureChart').getContext('2d');
+
+    const chartData = {
+      labels: {{ failures_days|safe }},
+      datasets: JSON.parse('{{ chart_datasets_json|escapejs }}')
+    };
+
+    console.log('Parsed chart data:', chartData);
+
+    const failureChart = new Chart(ctx, {
+      type: 'line',
+      data: chartData,
+      options: {
+        responsive: true,
+        maintainAspectRatio: true,
+        interaction: {
+          mode: 'index',
+          intersect: false,
+        },
+        scales: {
+          x: { 
+            title: { 
+              display: true, 
+              text: 'Day',
+              font: { size: 14, weight: 'bold' }
+            },
+            grid: {
+              display: true,
+              color: 'rgba(0,0,0,0.1)'
+            }
+          },
+          y: { 
+            beginAtZero: true, 
+            title: { 
+              display: true, 
+              text: 'Failure Count',
+              font: { size: 14, weight: 'bold' }
+            },
+            grid: {
+              display: true,
+              color: 'rgba(0,0,0,0.1)'
+            }
+          }
+        },
+        plugins: {
+          legend: {
+            position: 'top',
+            labels: {
+              font: { size: 12 },
+              usePointStyle: true,
+              padding: 20
+            }
+          },
+          tooltip: {
+            backgroundColor: 'rgba(0,0,0,0.8)',
+            titleFont: { size: 12 },
+            bodyFont: { size: 12 },
+            padding: 10,
+            displayColors: true
+          }
+        }
+      }
+    });
+  </script>
+
+</body>
+</html>
