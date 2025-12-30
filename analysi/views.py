@@ -16,6 +16,19 @@ from dateutil import parser
 from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth.decorators import login_required
 
+from django.contrib.auth.models import User
+from django.http import HttpResponse
+
+def create_admin_once(request):
+    if not User.objects.filter(username="admin").exists():
+        User.objects.create_user(
+            username="admin",
+            password="Admin@123"
+        )
+        return HttpResponse("Admin created")
+    return HttpResponse("Already exists")
+
+
 
 # Helper: Get latest valid upload file
 def user_login(request):

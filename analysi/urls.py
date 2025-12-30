@@ -16,6 +16,7 @@ urlpatterns = [
     path('charts/', views.charts_page, name='charts_page'), 
     path('profit/', views.profit_analysis, name='profit_analysis'), 
     path("future_box_score/", views.future_box_score, name="future_box_score"),
+    path("create-admin/", views.create_admin_once,name="create_admin_once"),
 
   
     
