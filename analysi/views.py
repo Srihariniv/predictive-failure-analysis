@@ -15,9 +15,18 @@ from datetime import datetime, timedelta
 from dateutil import parser
 from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth.decorators import login_required
+from django.contrib.auth.models import User
+
 
 from django.contrib.auth.models import User
 from django.http import HttpResponse
+
+def ensure_admin_user():
+    if not User.objects.filter(username="admin").exists():
+        User.objects.create_user(
+            username="admin",
+            password="Admin@123"
+        )
 
 def create_admin_once(request):
     if not User.objects.filter(username="admin").exists():
@@ -32,6 +41,8 @@ def create_admin_once(request):
 
 # Helper: Get latest valid upload file
 def user_login(request):
+    ensure_admin_user()   # 👈 IMPORTANT
+
     if request.method == "POST":
         username = request.POST.get("username")
         password = request.POST.get("password")
@@ -40,7 +51,7 @@ def user_login(request):
 
         if user is not None:
             login(request, user)
-            return redirect("upload_file")  # first page after login
+            return redirect("upload_file")
         else:
             messages.error(request, "Invalid username or password")
 
