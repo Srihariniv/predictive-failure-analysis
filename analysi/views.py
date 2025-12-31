@@ -8,58 +8,32 @@ from django.template.defaultfilters import register
 from django.utils.text import get_valid_filename
 import pandas as pd
 from .forms import UploadFileForm
-from .ml.extract import extract_data
-from .ml.predict import train_models
+
 from dateutil.relativedelta import relativedelta
 from datetime import datetime, timedelta
 from dateutil import parser
-from django.contrib.auth import authenticate, login, logout
-from django.contrib.auth.decorators import login_required
-from django.contrib.auth.models import User
 
-
-from django.contrib.auth.models import User
 from django.http import HttpResponse
-
-def ensure_admin_user():
-    if not User.objects.filter(username="admin").exists():
-        User.objects.create_user(
-            username="admin",
-            password="Admin@123"
-        )
-
-def create_admin_once(request):
-    if not User.objects.filter(username="admin").exists():
-        User.objects.create_user(
-            username="admin",
-            password="Admin@123"
-        )
-        return HttpResponse("Admin created")
-    return HttpResponse("Already exists")
 
 
 
 # Helper: Get latest valid upload file
 def user_login(request):
-    ensure_admin_user()   # 👈 IMPORTANT
-
     if request.method == "POST":
         username = request.POST.get("username")
         password = request.POST.get("password")
 
-        user = authenticate(request, username=username, password=password)
-
-        if user is not None:
-            login(request, user)
+        # SIMPLE DEMO LOGIN (NO DATABASE)
+        if username == "admin" and password == "Admin@123":
+            request.session["logged_in"] = True
             return redirect("upload_file")
         else:
             messages.error(request, "Invalid username or password")
 
     return render(request, "analysi/login.html")
 
-
 def user_logout(request):
-    logout(request)
+    request.session.flush()
     return redirect("login")
 
 
@@ -156,8 +130,11 @@ def normalize_category_header(name):
 
     return ""
 
-@login_required(login_url="login")
+
 def profit_analysis(request):
+    import pandas as pd
+    from .ml.extract import extract_data
+    from .ml.predict import train_models
     upload_dir = os.path.join(settings.MEDIA_ROOT, 'uploads')
     os.makedirs(upload_dir, exist_ok=True)
 
@@ -326,8 +303,11 @@ def profit_analysis(request):
     return render(request, 'analysi/profit_analysis.html', context)
 
 # ---------------- FUTURE BOX SCORE PAGE ----------------
-@login_required(login_url="login")
+
 def future_box_score(request):
+    import pandas as pd
+    from .ml.extract import extract_data
+    from .ml.predict import train_models
 
     upload_dir = os.path.join(settings.MEDIA_ROOT, 'uploads')
     os.makedirs(upload_dir, exist_ok=True)
@@ -582,7 +562,7 @@ def home(request):
 # ========================================
 # UPLOAD FILE
 # ========================================
-@login_required(login_url="login")
+
 def upload_file(request):
     upload_dir = os.path.join(settings.MEDIA_ROOT, 'uploads')
     os.makedirs(upload_dir, exist_ok=True)
@@ -633,9 +613,8 @@ from django.shortcuts import render, redirect
 from django.contrib import messages
 from django.conf import settings
 from django.http import JsonResponse
-import pandas as pd
-from .ml.extract import extract_data
-from .ml.predict import train_models
+
+
 from datetime import datetime, timedelta
 from dateutil.parser import parse as parser_parse
 
@@ -692,8 +671,11 @@ def get_category_color(category):
 # --------------------------------------
 # MAIN DASHBOARD VIEW WITH COLOR SUPPORT
 # --------------------------------------
-@login_required(login_url="login")
+
 def dashboard(request):
+    import pandas as pd
+    from .ml.extract import extract_data
+    from .ml.predict import train_models
     upload_dir = os.path.join(settings.MEDIA_ROOT, 'uploads')
     os.makedirs(upload_dir, exist_ok=True)
 
@@ -1116,8 +1098,11 @@ def delete_file(request, filename):
 # ========================================
 # ALGORITHMS
 # ========================================
-@login_required(login_url="login")
+
 def algorithms(request):
+    import pandas as pd
+    from .ml.extract import extract_data
+    from .ml.predict import train_models
     upload_dir = os.path.join(settings.MEDIA_ROOT, 'uploads')
     if not os.path.exists(upload_dir) or not os.listdir(upload_dir):
         messages.error(request, "Upload file first!")
@@ -1254,8 +1239,9 @@ import os
 import pandas as pd
 from django.conf import settings
 from django.shortcuts import render
-@login_required(login_url="login")
+
 def raw_data_view(request):
+
     upload_dir = os.path.join(settings.MEDIA_ROOT, 'uploads')
     os.makedirs(upload_dir, exist_ok=True)
 
@@ -1361,8 +1347,11 @@ import json
 from django.shortcuts import render, redirect
 from django.contrib import messages
 from dateutil.relativedelta import relativedelta
-@login_required(login_url="login")
+
 def future_predictions(request):
+    import pandas as pd
+    from .ml.extract import extract_data
+    from .ml.predict import train_models
     upload_dir = os.path.join(settings.MEDIA_ROOT, 'uploads')
     os.makedirs(upload_dir, exist_ok=True)
 
@@ -1497,8 +1486,11 @@ def get_category_color(category):
 # ========================================
 # FINANCIAL DASHBOARD
 # ========================================
-@login_required(login_url="login")
+
 def financial_dashboard(request):
+    import pandas as pd
+    from .ml.extract import extract_data
+    from .ml.predict import train_models
     upload_dir = os.path.join(settings.MEDIA_ROOT, 'uploads')
     os.makedirs(upload_dir, exist_ok=True)
 
