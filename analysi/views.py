@@ -657,11 +657,12 @@ def get_category_color(category):
 # --------------------------------------
 # MAIN DASHBOARD VIEW WITH COLOR SUPPORT
 # --------------------------------------
-def dashboard(request):
-    import pandas as pd
-    from .ml.extract import extract_data
-    from .ml.predict import train_models
+import pandas as pd
+from .ml.extract import extract_data
+from .ml.predict import train_models
 
+def dashboard(request):
+   
     upload_dir = os.path.join(settings.MEDIA_ROOT, 'uploads')
     os.makedirs(upload_dir, exist_ok=True)
 
@@ -680,68 +681,76 @@ def dashboard(request):
     # Clean categories
     df['category_clean'] = df['category'].apply(clean_category_name)
 
-    # Read raw file
+    # Read raw file for ML training
     try:
         df_raw = pd.read_excel(file_path)
     except Exception:
         df_raw = None
 
-    # ============================
-    # 🔴 ML SAFE BLOCK (IMPORTANT)
-    # ============================
-    try:
-        results = train_models(df, df_raw)
-    except Exception as e:
-        print("⚠️ ML skipped due to Render memory limit:", e)
+    # Train Models
+    results = train_models(df, df_raw)
 
-        results = {
-            "top_risks": [],
-            "predictions": [],
-            "next_month_30_predictions": [],
-            "financial_summary": {},
-            "financial_economics": {},
-            "learned_reasons": {},
-            "regressors": {"models": {}, "best": {}},
-            "classifiers": {"models": {}, "best": {}},
-        }
+    if isinstance(results, str):
+        messages.error(request, f"Model training failed: {results}")
+        return redirect('upload_file')
 
-    # ----------------------------
-    # SAFETY CHECK
-    # ----------------------------
-    if not isinstance(results, dict):
-        results = {
-            "top_risks": [],
-            "predictions": [],
-            "next_month_30_predictions": [],
-            "financial_summary": {},
-            "financial_economics": {},
-            "learned_reasons": {},
-            "regressors": {"models": {}, "best": {}},
-            "classifiers": {"models": {}, "best": {}},
-        }
+    if not isinstance(results, dict) or "top_risks" not in results:
+        messages.error(request, "Invalid results from train_models.")
+        return redirect('upload_file')
 
-    # Remove invalid categories
+    # Remove categories not present in raw data
     raw_categories = set(df['category_clean'].unique())
 
     def filter_predictions(data_list):
         filtered = []
         for p in data_list:
             part_name = p.get("part") or p.get("category")
-            if clean_category_name(part_name) in raw_categories:
+            part_name_clean = clean_category_name(part_name)
+            if part_name_clean in raw_categories:
                 filtered.append(p)
         return filtered
 
-    results["predictions"] = filter_predictions(results.get("predictions", []))
-    results["next_month_30_predictions"] = filter_predictions(results.get("next_month_30_predictions", []))
-    results["top_risks"] = filter_predictions(results.get("top_risks", []))
+    if "predictions" in results:
+        results["predictions"] = filter_predictions(results["predictions"])
+
+    if "next_month_30_predictions" in results:
+        results["next_month_30_predictions"] = filter_predictions(results["next_month_30_predictions"])
+
+    if "top_risks" in results:
+        results["top_risks"] = filter_predictions(results["top_risks"])
 
     # Financial summary
     financial_summary = results.get("financial_summary", {})
     financial_economics = results.get("financial_economics", {})
 
-    # ----------------------------
-    # FAILURE RATE LIST
-    # ----------------------------
+    # Investment Opportunities
+    total_investment_opportunity = 0
+    high_roi_opportunities = []
+
+    for pred in results.get("predictions", []) + results.get("next_month_30_predictions", []):
+        investment = pred.get("investment_recommendation", {})
+        if investment.get("investment_needed", 0) > 0:
+            total_investment_opportunity += investment["investment_needed"]
+            if investment.get("estimated_roi", 0) > 50:
+                high_roi_opportunities.append({
+                    "part": pred["part"],
+                    "investment": investment["investment_needed"],
+                    "roi": investment["estimated_roi"],
+                    "type": investment["investment_type"]
+                })
+
+    high_roi_opportunities = sorted(high_roi_opportunities, key=lambda x: x["roi"], reverse=True)[:5]
+
+    total_planned_revenue = financial_summary.get("total_planned_revenue", 0)
+    total_actual_revenue = financial_summary.get("total_actual_revenue", 0)
+    total_lost_revenue = financial_summary.get("total_lost_revenue", 0)
+    revenue_efficiency = (total_actual_revenue / total_planned_revenue * 100) if total_planned_revenue > 0 else 0
+
+    # Top risks chart
+    top_labels = [p.get('part', '') for p in results.get("top_risks", [])]
+    top_values = [p.get('total', 0) for p in results.get("top_risks", [])]
+
+    # Build failure rate list
     failure_rate_list = []
     unique_cats = df['category_clean'].unique()
 
@@ -749,8 +758,7 @@ def dashboard(request):
         data = df[df['category_clean'] == cat]
         total_plan = data['plan'].sum()
         total_failure = data['failure'].sum()
-        rate = (total_failure / total_plan * 100) if total_plan > 0 else 0
-
+        rate = (total_failure / total_plan) * 100 if total_plan > 0 else 0
         failure_rate_list.append({
             "part": cat,
             "total_plan": int(total_plan),
@@ -760,73 +768,143 @@ def dashboard(request):
 
     top_failure_rate = sorted(failure_rate_list, key=lambda x: x["rate"], reverse=True)[:5]
 
-    # ----------------------------
-    # FAILURE TRENDS
-    # ----------------------------
+    # Failure Trends (Deduped)
     failure_trends = {}
     all_dates = set()
 
     for cat in unique_cats:
         cat_data = df[df['category_clean'] == cat].sort_values('date')
-        dates = cat_data['date'].dt.strftime('%Y-%m-%d').tolist()
-        failures = cat_data['failure'].tolist()
-        plans = cat_data['plan'].tolist()
-        actuals = cat_data['actual'].tolist()
+        if len(cat_data) > 0:
+            unique_points = set()
+            dedup_dates = []
+            dedup_failure_rates = []
+            dedup_actual = []
+            dedup_plan = []
+            dedup_failure_count = []
 
-        rates = [
-            round((f / p * 100), 2) if p > 0 else 0
-            for f, p in zip(failures, plans)
-        ]
+            for _, row in cat_data.iterrows():
+                failure_rate = (row['failure'] / row['plan'] * 100) if row['plan'] > 0 else 0
+                point_key = (row['plan'], row['actual'], round(failure_rate, 2), row['failure'])
+                if point_key not in unique_points:
+                    unique_points.add(point_key)
+                    dedup_plan.append(row['plan'])
+                    dedup_actual.append(row['actual'])
+                    dedup_failure_rates.append(round(failure_rate, 2))
+                    dedup_dates.append(row['date'].strftime('%Y-%m-%d'))
+                    dedup_failure_count.append(row['failure'])
 
-        failure_trends[cat] = {
-            "dates": dates,
-            "failure_rates": rates,
-            "actual_values": actuals,
-            "plan_values": plans,
-            "failure_values": failures,
-        }
-
-        all_dates.update(dates)
+            failure_trends[cat] = {
+                'dates': dedup_dates,
+                'failure_rates': dedup_failure_rates,
+                'actual_values': dedup_actual,
+                'plan_values': dedup_plan,
+                'failure_values': dedup_failure_count
+            }
+            all_dates.update(dedup_dates)
 
     common_dates = sorted(list(all_dates))
 
-    # ----------------------------
-    # CATEGORY COLORS
-    # ----------------------------
-    category_colors = {cat: get_category_color(cat) for cat in unique_cats}
+    # Category comparison (bar)
+    category_comparison = []
+    category_labels = []
+    category_rates = []
+    category_failures = []
 
-    # ----------------------------
-    # PRODUCTION OVERVIEW
-    # ----------------------------
+    for cat_data in failure_rate_list:
+        category_comparison.append({
+            'category': cat_data['part'],
+            'failure_rate': cat_data['rate'],
+            'total_failure': cat_data['total_failure']
+        })
+        category_labels.append(cat_data['part'])
+        category_rates.append(cat_data['rate'])
+        category_failures.append(cat_data['total_failure'])
+
+    # ---------------------------
+    # ADD CATEGORY COLORS HERE
+    # ---------------------------
+    category_colors = {}
+    for cat in unique_cats:
+        category_colors[cat] = get_category_color(cat)
+
+    # Risk Distribution
+    risk_distribution = {'LOW': 0, 'MED': 0, 'HIGH': 0}
+    for pred in results.get("predictions", []):
+        risk_distribution[pred['risk']] += 1
+
+    # Production overview
     production_overview = {
-        "total_plan": int(df['plan'].sum()),
-        "total_actual": int(df['actual'].sum()),
-        "total_failure": int(df['failure'].sum()),
-        "efficiency_rate": round(
-            (df['actual'].sum() / df['plan'].sum() * 100)
-            if df['plan'].sum() > 0 else 0, 2
-        )
+        'total_plan': df['plan'].sum(),
+        'total_actual': df['actual'].sum(),
+        'total_failure': df['failure'].sum(),
+        'efficiency_rate': round((df['actual'].sum() / df['plan'].sum() * 100) if df['plan'].sum() > 0 else 0, 2)
     }
 
-    # ----------------------------
-    # CONTEXT
-    # ----------------------------
+    # Monthly performance
+    monthly_performance = {}
+    df['month'] = df['date'].dt.strftime('%Y-%m')
+    for month in sorted(df['month'].unique()):
+        month_data = df[df['month'] == month]
+        monthly_performance[month] = {
+            'plan': month_data['plan'].sum(),
+            'actual': month_data['actual'].sum(),
+            'failure': month_data['failure'].sum()
+        }
+
+    # Category performance
+    category_performance = []
+    for cat in unique_cats:
+        cat_data = df[df['category_clean'] == cat]
+        category_performance.append({
+            'category': cat,
+            'plan': cat_data['plan'].sum(),
+            'actual': cat_data['actual'].sum(),
+            'failure': cat_data['failure'].sum(),
+            'efficiency': round((cat_data['actual'].sum() / cat_data['plan'].sum() * 100) if cat_data['plan'].sum() > 0 else 0, 2)
+        })
+
+    # Learned reasons
+    failure_reasons = {}
+    if "learned_reasons" in results:
+        for category, reasons in results["learned_reasons"].items():
+            failure_reasons[category] = reasons[:5]
+
+    # Final context sent to Dashboard
     context = {
         "results": results,
-        "latest_file": latest_file,
         "top_parts": results.get("top_risks", []),
-        "predictions": results.get("predictions", []),
+        "reg_models": results.get("regressors", {}).get("models", {}),
+        "reg_best": results.get("regressors", {}).get("best", {}),
+        "clf_models": results.get("classifiers", {}).get("models", {}),
+        "clf_best": results.get("classifiers", {}).get("best", {}),
+        "latest_file": latest_file,
+        "top_labels": top_labels,
+        "top_values": top_values,
         "top_failure_rate": top_failure_rate,
+        "predictions": results.get("predictions", []),
         "failure_trends": failure_trends,
         "common_dates": common_dates,
-        "category_colors": category_colors,
+        "category_comparison": category_comparison,
+        "category_labels": category_labels,
+        "category_rates": category_rates,
+        "category_failures": category_failures,
+        "category_colors": category_colors,   # <--- ADDED
+        "risk_distribution": risk_distribution,
         "production_overview": production_overview,
+        "monthly_performance": monthly_performance,
+        "category_performance": category_performance,
+        "failure_reasons": failure_reasons,
         "financial_summary": financial_summary,
         "financial_economics": financial_economics,
+        "total_investment_opportunity": round(total_investment_opportunity, 2),
+        "high_roi_opportunities": high_roi_opportunities,
+        "revenue_efficiency": round(revenue_efficiency, 2),
+        "total_planned_revenue": round(total_planned_revenue, 2),
+        "total_actual_revenue": round(total_actual_revenue, 2),
+        "total_lost_revenue": round(total_lost_revenue, 2),
     }
 
-    return render(request, "analysi/dashboard.html", context)
-
+    return render(request, 'analysi/dashboard.html', context)
 
 
 def get_latest_file(upload_dir):
