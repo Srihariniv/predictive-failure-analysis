@@ -40,7 +40,7 @@ bg-gradient-to-br from-slate-100 via-gray-100 to-stone-100 px-4">
         {% endif %}
 
         <!-- Login Form -->
-        <form method="POST" class="space-y-4">
+        <form method="POST" action="{% url 'login' %}" class="space-y-4">
             {% csrf_token %}
 
             <div>
