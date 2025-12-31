@@ -23,18 +23,18 @@ def user_login(request):
         username = request.POST.get("username")
         password = request.POST.get("password")
 
-        # SIMPLE DEMO LOGIN (NO DATABASE)
         if username == "admin" and password == "Admin@123":
-            request.session["logged_in"] = True
+            # NO SESSION, NO DB
             return redirect("upload_file")
         else:
             messages.error(request, "Invalid username or password")
 
     return render(request, "analysi/login.html")
 
+
 def user_logout(request):
-    request.session.flush()
     return redirect("login")
+
 
 
 # Helper: Parse date (for raw_data_view)
