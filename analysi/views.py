@@ -1080,9 +1080,7 @@ def delete_file(request, filename):
 # ========================================
 
 def algorithms(request):
-    import pandas as pd
-    from .ml.extract import extract_data
-    from .ml.predict import train_models
+   
     upload_dir = os.path.join(settings.MEDIA_ROOT, 'uploads')
     if not os.path.exists(upload_dir) or not os.listdir(upload_dir):
         messages.error(request, "Upload file first!")
@@ -1278,9 +1276,7 @@ def get_latest_file(directory):
 
 
 def future_predictions(request):
-    import pandas as pd
-    from .ml.extract import extract_data
-    from .ml.predict import train_models
+   
     upload_dir = os.path.join(settings.MEDIA_ROOT, 'uploads')
     os.makedirs(upload_dir, exist_ok=True)
 
@@ -1417,9 +1413,7 @@ def get_category_color(category):
 # ========================================
 
 def financial_dashboard(request):
-    import pandas as pd
-    from .ml.extract import extract_data
-    from .ml.predict import train_models
+  
     upload_dir = os.path.join(settings.MEDIA_ROOT, 'uploads')
     os.makedirs(upload_dir, exist_ok=True)
 
