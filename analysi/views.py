@@ -1,5 +1,7 @@
 import json
 import os
+import random
+from typing import Counter
 from django.shortcuts import render, redirect
 from django.contrib import messages
 from django.conf import settings
@@ -93,18 +95,6 @@ def get_item(dictionary, key):
 # ========================================
 # PROFIT & LOSS ANALYSIS PAGE
 # ========================================
-import os
-import pandas as pd
-from django.shortcuts import render, redirect
-from django.contrib import messages
-from django.conf import settings
-
-import os
-import random
-import pandas as pd
-from django.conf import settings
-from django.shortcuts import render, redirect
-from django.contrib import messages
 
 
 def normalize_category_header(name):
@@ -645,11 +635,7 @@ def clean_category_name(name):
 # ========================================
 # DASHBOARD - ENHANCED WITH FINANCIAL DATA
 # ========================================
-import os
-import pandas as pd
-from django.conf import settings
-from django.shortcuts import render, redirect
-from django.contrib import messages
+
 
 # ---------------------------
 # COLOR FUNCTION FOR CHARTS
@@ -841,13 +827,7 @@ def dashboard(request):
 
     return render(request, "analysi/dashboard.html", context)
 
-from django.shortcuts import render, redirect
-from django.contrib import messages
-from django.conf import settings
-import os
-import pandas as pd
-from .ml.extract import extract_data
-from .ml.predict import train_models
+
 
 def get_latest_file(upload_dir):
     files = [f for f in os.listdir(upload_dir) if f.endswith(('.xlsx', '.xls')) and not f.startswith('~$')]
@@ -1124,14 +1104,7 @@ def algorithms(request):
 # ========================================
 # RAW DATA VIEW
 # ========================================
-import os
-import pandas as pd
-from django.conf import settings
-from django.shortcuts import render
-import os
-import pandas as pd
-from django.conf import settings
-from django.shortcuts import render
+
 
 def get_latest_file(directory):
     files = [f for f in os.listdir(directory) if f.endswith('.xlsx')]
@@ -1140,27 +1113,7 @@ def get_latest_file(directory):
     files = sorted(files, key=lambda x: os.path.getmtime(os.path.join(directory, x)), reverse=True)
     return files[0]
 
-import os
-import pandas as pd
-from django.conf import settings
-from django.shortcuts import render
-import os
-import pandas as pd
-from django.conf import settings
-from django.shortcuts import render
-import os
-import pandas as pd
-from django.conf import settings
-from django.shortcuts import render
 
-import os
-import pandas as pd
-from django.conf import settings
-from django.shortcuts import render
-import os
-import pandas as pd
-from django.conf import settings
-from django.shortcuts import render
 
 def raw_data_view(request):
 
@@ -1228,20 +1181,7 @@ def raw_data_view(request):
 # ========================================
 # FUTURE PREDICTIONS - ENHANCED WITH FINANCIAL DATA
 # ========================================
-import os
-from django.shortcuts import render, redirect
-from django.contrib import messages
-from django.conf import settings
-import pandas as pd
-from dateutil.relativedelta import relativedelta
 
-from .ml.extract import extract_data, clean_category_name
-from .ml.predict import train_models
-import os
-import json
-from dateutil.relativedelta import relativedelta
-from django.shortcuts import render, redirect
-from django.contrib import messages
 
 def get_latest_file(directory):
     files = [f for f in os.listdir(directory) if f.endswith('.xlsx')]
@@ -1250,12 +1190,6 @@ def get_latest_file(directory):
     files = sorted(files, key=lambda x: os.path.getmtime(os.path.join(directory, x)), reverse=True)
     return files[0]
 
-import os
-import json
-from dateutil.relativedelta import relativedelta
-from collections import Counter
-from django.shortcuts import redirect, render
-from django.contrib import messages
 
 def get_latest_file(directory):
     files = [f for f in os.listdir(directory) if f.endswith('.xlsx')]
@@ -1263,12 +1197,7 @@ def get_latest_file(directory):
         return None
     files = sorted(files, key=lambda x: os.path.getmtime(os.path.join(directory, x)), reverse=True)
     return files[0]
-from collections import Counter
-import os
-import json
-from django.shortcuts import render, redirect
-from django.contrib import messages
-from dateutil.relativedelta import relativedelta
+
 
 def future_predictions(request):
     import pandas as pd
