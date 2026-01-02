@@ -552,7 +552,6 @@ def home(request):
 # ========================================
 # UPLOAD FILE
 # ========================================
-
 def upload_file(request):
     upload_dir = os.path.join(settings.MEDIA_ROOT, 'uploads')
     os.makedirs(upload_dir, exist_ok=True)
@@ -579,7 +578,11 @@ def upload_file(request):
                     try:
                         os.remove(temp_path)
                     except Exception:
-                        pass  # Ignore file in use errors
+                        pass
+
+            # ✅ ONLY FIX (DO NOT CHANGE ANYTHING ELSE)
+            from django.core.cache import cache
+            cache.delete("ML_RESULTS")
 
             messages.success(request, f"{file.name} uploaded!")
             return redirect('dashboard')
@@ -587,7 +590,6 @@ def upload_file(request):
         form = UploadFileForm()
 
     return render(request, 'analysi/upload.html', {'form': form})
-
 
 # ========================================
 # DASHBOARD
@@ -657,12 +659,21 @@ def get_category_color(category):
 # --------------------------------------
 # MAIN DASHBOARD VIEW WITH COLOR SUPPORT
 # --------------------------------------
-import pandas as pd
-from .ml.extract import extract_data
-from .ml.predict import train_models
-
 def dashboard(request):
-   
+    import os
+    import pandas as pd
+    from django.core.cache import cache
+    from django.shortcuts import render, redirect
+    from django.contrib import messages
+    from django.conf import settings
+
+    # LAZY IMPORTS (VERY IMPORTANT FOR RENDER)
+    from .ml.extract import extract_data
+    from .ml.predict import train_models
+
+    # ---------------------------------
+    # FILE HANDLING
+    # ---------------------------------
     upload_dir = os.path.join(settings.MEDIA_ROOT, 'uploads')
     os.makedirs(upload_dir, exist_ok=True)
 
@@ -673,238 +684,179 @@ def dashboard(request):
 
     file_path = os.path.join(upload_dir, latest_file)
 
+    # ---------------------------------
+    # LIGHT DATA EXTRACTION (NO ML)
+    # ---------------------------------
     df = extract_data(file_path)
-    if df.empty:
-        messages.error(request, "No data extracted!")
+    if df is None or df.empty:
+        messages.error(request, "No data extracted from Excel!")
         return redirect('upload_file')
 
-    # Clean categories
     df['category_clean'] = df['category'].apply(clean_category_name)
 
-    # Read raw file for ML training
-    try:
-        df_raw = pd.read_excel(file_path)
-    except Exception:
-        df_raw = None
+    # ---------------------------------
+    # 🔑 GET ML RESULTS FROM CACHE
+    # ---------------------------------
+    results = cache.get("ML_RESULTS")
 
-    # Train Models
-    results = train_models(df, df_raw)
+    # ---------------------------------
+    # 🧠 TRAIN ML ONLY ONCE (IF NOT CACHED)
+    # ---------------------------------
+    if results is None:
+        try:
+            df_raw = pd.read_excel(file_path)
+            results = train_models(df, df_raw)
 
-    if isinstance(results, str):
-        messages.error(request, f"Model training failed: {results}")
-        return redirect('upload_file')
+            if isinstance(results, dict):
+                cache.set("ML_RESULTS", results, timeout=60 * 60)  # 1 hour
+            else:
+                results = {}
 
-    if not isinstance(results, dict) or "top_risks" not in results:
-        messages.error(request, "Invalid results from train_models.")
-        return redirect('upload_file')
+        except Exception as e:
+            print("ML Training Error:", e)
+            messages.warning(
+                request,
+                "ML model not trained yet. Please open Algorithms page once."
+            )
+            results = {}
 
-    # Remove categories not present in raw data
+    # SAFETY
+    results = results if isinstance(results, dict) else {}
+
+    # ---------------------------------
+    # FILTER ML RESULTS BASED ON DATA
+    # ---------------------------------
     raw_categories = set(df['category_clean'].unique())
 
     def filter_predictions(data_list):
         filtered = []
         for p in data_list:
-            part_name = p.get("part") or p.get("category")
-            part_name_clean = clean_category_name(part_name)
-            if part_name_clean in raw_categories:
+            part = p.get("part") or p.get("category")
+            if clean_category_name(part) in raw_categories:
                 filtered.append(p)
         return filtered
 
-    if "predictions" in results:
-        results["predictions"] = filter_predictions(results["predictions"])
+    predictions = filter_predictions(results.get("predictions", []))
+    next_predictions = filter_predictions(results.get("next_month_30_predictions", []))
+    top_risks = filter_predictions(results.get("top_risks", []))
 
-    if "next_month_30_predictions" in results:
-        results["next_month_30_predictions"] = filter_predictions(results["next_month_30_predictions"])
-
-    if "top_risks" in results:
-        results["top_risks"] = filter_predictions(results["top_risks"])
-
-    # Financial summary
-    financial_summary = results.get("financial_summary", {})
-    financial_economics = results.get("financial_economics", {})
-
-    # Investment Opportunities
-    total_investment_opportunity = 0
-    high_roi_opportunities = []
-
-    for pred in results.get("predictions", []) + results.get("next_month_30_predictions", []):
-        investment = pred.get("investment_recommendation", {})
-        if investment.get("investment_needed", 0) > 0:
-            total_investment_opportunity += investment["investment_needed"]
-            if investment.get("estimated_roi", 0) > 50:
-                high_roi_opportunities.append({
-                    "part": pred["part"],
-                    "investment": investment["investment_needed"],
-                    "roi": investment["estimated_roi"],
-                    "type": investment["investment_type"]
-                })
-
-    high_roi_opportunities = sorted(high_roi_opportunities, key=lambda x: x["roi"], reverse=True)[:5]
-
-    total_planned_revenue = financial_summary.get("total_planned_revenue", 0)
-    total_actual_revenue = financial_summary.get("total_actual_revenue", 0)
-    total_lost_revenue = financial_summary.get("total_lost_revenue", 0)
-    revenue_efficiency = (total_actual_revenue / total_planned_revenue * 100) if total_planned_revenue > 0 else 0
-
-    # Top risks chart
-    top_labels = [p.get('part', '') for p in results.get("top_risks", [])]
-    top_values = [p.get('total', 0) for p in results.get("top_risks", [])]
-
-    # Build failure rate list
+    # ---------------------------------
+    # FAILURE RATE CALCULATION
+    # ---------------------------------
     failure_rate_list = []
     unique_cats = df['category_clean'].unique()
 
     for cat in unique_cats:
         data = df[df['category_clean'] == cat]
-        total_plan = data['plan'].sum()
-        total_failure = data['failure'].sum()
-        rate = (total_failure / total_plan) * 100 if total_plan > 0 else 0
+        plan = data['plan'].sum()
+        failure = data['failure'].sum()
+        rate = (failure / plan) * 100 if plan > 0 else 0
+
         failure_rate_list.append({
             "part": cat,
-            "total_plan": int(total_plan),
-            "total_failure": int(total_failure),
+            "total_plan": int(plan),
+            "total_failure": int(failure),
             "rate": round(rate, 2)
         })
 
-    top_failure_rate = sorted(failure_rate_list, key=lambda x: x["rate"], reverse=True)[:5]
+    top_failure_rate = sorted(
+        failure_rate_list,
+        key=lambda x: x["rate"],
+        reverse=True
+    )[:5]
 
-    # Failure Trends (Deduped)
+    # ---------------------------------
+    # FAILURE TRENDS (LINE CHART)
+    # ---------------------------------
     failure_trends = {}
     all_dates = set()
 
     for cat in unique_cats:
         cat_data = df[df['category_clean'] == cat].sort_values('date')
-        if len(cat_data) > 0:
-            unique_points = set()
-            dedup_dates = []
-            dedup_failure_rates = []
-            dedup_actual = []
-            dedup_plan = []
-            dedup_failure_count = []
+        dates, rates = [], []
 
-            for _, row in cat_data.iterrows():
-                failure_rate = (row['failure'] / row['plan'] * 100) if row['plan'] > 0 else 0
-                point_key = (row['plan'], row['actual'], round(failure_rate, 2), row['failure'])
-                if point_key not in unique_points:
-                    unique_points.add(point_key)
-                    dedup_plan.append(row['plan'])
-                    dedup_actual.append(row['actual'])
-                    dedup_failure_rates.append(round(failure_rate, 2))
-                    dedup_dates.append(row['date'].strftime('%Y-%m-%d'))
-                    dedup_failure_count.append(row['failure'])
+        for _, row in cat_data.iterrows():
+            rate = (row['failure'] / row['plan'] * 100) if row['plan'] > 0 else 0
+            dates.append(row['date'].strftime('%Y-%m-%d'))
+            rates.append(round(rate, 2))
 
+        if dates:
             failure_trends[cat] = {
-                'dates': dedup_dates,
-                'failure_rates': dedup_failure_rates,
-                'actual_values': dedup_actual,
-                'plan_values': dedup_plan,
-                'failure_values': dedup_failure_count
+                "dates": dates,
+                "failure_rates": rates
             }
-            all_dates.update(dedup_dates)
+            all_dates.update(dates)
 
-    common_dates = sorted(list(all_dates))
+    common_dates = sorted(all_dates)
 
-    # Category comparison (bar)
-    category_comparison = []
-    category_labels = []
-    category_rates = []
-    category_failures = []
+    # ---------------------------------
+    # CATEGORY COLORS
+    # ---------------------------------
+    category_colors = {cat: get_category_color(cat) for cat in unique_cats}
 
-    for cat_data in failure_rate_list:
-        category_comparison.append({
-            'category': cat_data['part'],
-            'failure_rate': cat_data['rate'],
-            'total_failure': cat_data['total_failure']
-        })
-        category_labels.append(cat_data['part'])
-        category_rates.append(cat_data['rate'])
-        category_failures.append(cat_data['total_failure'])
-
-    # ---------------------------
-    # ADD CATEGORY COLORS HERE
-    # ---------------------------
-    category_colors = {}
-    for cat in unique_cats:
-        category_colors[cat] = get_category_color(cat)
-
-    # Risk Distribution
+    # ---------------------------------
+    # RISK DISTRIBUTION
+    # ---------------------------------
     risk_distribution = {'LOW': 0, 'MED': 0, 'HIGH': 0}
-    for pred in results.get("predictions", []):
-        risk_distribution[pred['risk']] += 1
+    for p in predictions:
+        risk_distribution[p.get('risk', 'LOW')] += 1
 
-    # Production overview
+    # ---------------------------------
+    # PRODUCTION OVERVIEW
+    # ---------------------------------
     production_overview = {
-        'total_plan': df['plan'].sum(),
-        'total_actual': df['actual'].sum(),
-        'total_failure': df['failure'].sum(),
-        'efficiency_rate': round((df['actual'].sum() / df['plan'].sum() * 100) if df['plan'].sum() > 0 else 0, 2)
+        "total_plan": int(df['plan'].sum()),
+        "total_actual": int(df['actual'].sum()),
+        "total_failure": int(df['failure'].sum()),
+        "efficiency_rate": round(
+            (df['actual'].sum() / df['plan'].sum() * 100)
+            if df['plan'].sum() > 0 else 0, 2
+        )
     }
 
-    # Monthly performance
-    monthly_performance = {}
-    df['month'] = df['date'].dt.strftime('%Y-%m')
-    for month in sorted(df['month'].unique()):
-        month_data = df[df['month'] == month]
-        monthly_performance[month] = {
-            'plan': month_data['plan'].sum(),
-            'actual': month_data['actual'].sum(),
-            'failure': month_data['failure'].sum()
-        }
+    # ---------------------------------
+    # FINANCIAL DATA
+    # ---------------------------------
+    financial_summary = results.get("financial_summary", {})
+    financial_economics = results.get("financial_economics", {})
 
-    # Category performance
-    category_performance = []
-    for cat in unique_cats:
-        cat_data = df[df['category_clean'] == cat]
-        category_performance.append({
-            'category': cat,
-            'plan': cat_data['plan'].sum(),
-            'actual': cat_data['actual'].sum(),
-            'failure': cat_data['failure'].sum(),
-            'efficiency': round((cat_data['actual'].sum() / cat_data['plan'].sum() * 100) if cat_data['plan'].sum() > 0 else 0, 2)
-        })
+    total_planned_revenue = financial_summary.get("total_planned_revenue", 0)
+    total_actual_revenue = financial_summary.get("total_actual_revenue", 0)
+    revenue_efficiency = (
+        (total_actual_revenue / total_planned_revenue) * 100
+        if total_planned_revenue > 0 else 0
+    )
 
-    # Learned reasons
-    failure_reasons = {}
-    if "learned_reasons" in results:
-        for category, reasons in results["learned_reasons"].items():
-            failure_reasons[category] = reasons[:5]
-
-    # Final context sent to Dashboard
+    # ---------------------------------
+    # FINAL CONTEXT
+    # ---------------------------------
     context = {
-        "results": results,
-        "top_parts": results.get("top_risks", []),
-        "reg_models": results.get("regressors", {}).get("models", {}),
-        "reg_best": results.get("regressors", {}).get("best", {}),
-        "clf_models": results.get("classifiers", {}).get("models", {}),
-        "clf_best": results.get("classifiers", {}).get("best", {}),
         "latest_file": latest_file,
-        "top_labels": top_labels,
-        "top_values": top_values,
-        "top_failure_rate": top_failure_rate,
-        "predictions": results.get("predictions", []),
+        "results": results,
+
+        # ML
+        "predictions": predictions,
+        "top_parts": top_risks,
+
+        # Charts
         "failure_trends": failure_trends,
         "common_dates": common_dates,
-        "category_comparison": category_comparison,
-        "category_labels": category_labels,
-        "category_rates": category_rates,
-        "category_failures": category_failures,
-        "category_colors": category_colors,   # <--- ADDED
+        "category_colors": category_colors,
         "risk_distribution": risk_distribution,
+
+        # Stats
+        "top_failure_rate": top_failure_rate,
         "production_overview": production_overview,
-        "monthly_performance": monthly_performance,
-        "category_performance": category_performance,
-        "failure_reasons": failure_reasons,
+
+        # Financial
         "financial_summary": financial_summary,
         "financial_economics": financial_economics,
-        "total_investment_opportunity": round(total_investment_opportunity, 2),
-        "high_roi_opportunities": high_roi_opportunities,
         "revenue_efficiency": round(revenue_efficiency, 2),
         "total_planned_revenue": round(total_planned_revenue, 2),
         "total_actual_revenue": round(total_actual_revenue, 2),
-        "total_lost_revenue": round(total_lost_revenue, 2),
     }
 
-    return render(request, 'analysi/dashboard.html', context)
+    return render(request, "analysi/dashboard.html", context)
 
 
 def get_latest_file(upload_dir):
@@ -914,6 +866,10 @@ def get_latest_file(upload_dir):
     return max(files, key=lambda x: os.path.getctime(os.path.join(upload_dir, x)))
 
 def charts_page(request):
+    import pandas as pd
+    from .ml.extract import extract_data
+    from .ml.predict import train_models
+
     upload_dir = os.path.join(settings.MEDIA_ROOT, 'uploads')
     os.makedirs(upload_dir, exist_ok=True)
 
@@ -1078,9 +1034,21 @@ def delete_file(request, filename):
 # ========================================
 # ALGORITHMS
 # ========================================
-
 def algorithms(request):
-   
+    import os
+    import pandas as pd
+    from django.core.cache import cache
+    from django.shortcuts import render, redirect
+    from django.contrib import messages
+    from django.conf import settings
+
+    # 🔹 LAZY ML IMPORTS (IMPORTANT FOR RENDER)
+    from .ml.extract import extract_data
+    from .ml.predict import train_models
+
+    # ---------------------------------
+    # FILE HANDLING
+    # ---------------------------------
     upload_dir = os.path.join(settings.MEDIA_ROOT, 'uploads')
     if not os.path.exists(upload_dir) or not os.listdir(upload_dir):
         messages.error(request, "Upload file first!")
@@ -1093,22 +1061,40 @@ def algorithms(request):
 
     file_path = os.path.join(upload_dir, latest_file)
 
+    # ---------------------------------
+    # DATA EXTRACTION
+    # ---------------------------------
     df = extract_data(file_path)
-    
-    # ADD THIS: Read raw Excel file
+    if df is None or df.empty:
+        messages.error(request, "No data extracted from Excel!")
+        return redirect('upload_file')
+
+    # Read raw Excel for ML
     try:
-        df_raw = pd.read_excel(file_path)  # Read the raw Excel data
+        df_raw = pd.read_excel(file_path)
     except Exception as e:
-        print(f"Error reading raw Excel: {e}")
+        print("Error reading raw Excel:", e)
         df_raw = None
 
-    # CHANGE THIS: Pass raw data to train_models
+    # ---------------------------------
+    # 🧠 TRAIN ML MODELS (ONLY HERE)
+    # ---------------------------------
     results = train_models(df, df_raw)
 
-    # FIXED: Clean category names to avoid duplicates
+    if not isinstance(results, dict):
+        messages.error(request, "ML training failed!")
+        return redirect('upload_file')
+
+    # ---------------------------------
+    # ✅ CACHE ML RESULTS FOR DASHBOARD
+    # ---------------------------------
+    cache.set("ML_RESULTS", results, timeout=60 * 60)  # 1 hour
+
+    # ---------------------------------
+    # CATEGORY NAME CLEANER
+    # ---------------------------------
     def clean_category_name(name):
         name = str(name).strip().upper()
-        # Standardize similar category names
         if 'COOLANT ELBOW' in name and 'COVERS' in name:
             return 'COOLANT ELBOW & COVERS'
         elif 'COOLANT ELBOW' in name:
@@ -1123,60 +1109,88 @@ def algorithms(request):
             return 'PULLEY'
         return name
 
-    reg_data = {'XGBoost': [], 'Random Forest': [], 'Linear': [], 'Decision Tree': []}
+    # ---------------------------------
+    # REGRESSION RESULTS
+    # ---------------------------------
+    reg_data = {
+        'XGBoost': [],
+        'Random Forest': [],
+        'Linear': [],
+        'Decision Tree': []
+    }
+
     for key, mae in results.get("regressors", {}).get("models", {}).items():
         if '_' not in key:
             continue
+
         part, algo = key.rsplit('_', 1)
-        # Clean the category name
         cleaned_part = clean_category_name(part)
+
         if algo in reg_data:
             best_algo = results.get("regressors", {}).get("best", {}).get(part, "")
             best = "Best" if best_algo == algo else ""
-            # Check if this part already exists
-            existing_part = next((p for p in reg_data[algo] if p["part"] == cleaned_part), None)
-            if existing_part:
-                # Keep the better MAE (lower is better)
-                if mae < existing_part["mae"]:
-                    existing_part["mae"] = mae
-                    existing_part["best"] = best
+
+            existing = next((p for p in reg_data[algo] if p["part"] == cleaned_part), None)
+            if existing:
+                if mae < existing["mae"]:
+                    existing["mae"] = mae
+                    existing["best"] = best
             else:
-                reg_data[algo].append({"part": cleaned_part, "mae": mae, "best": best})
-    
-    # Sort each algorithm's results by MAE (ascending)
+                reg_data[algo].append({
+                    "part": cleaned_part,
+                    "mae": round(mae, 3),
+                    "best": best
+                })
+
     for algo in reg_data:
         reg_data[algo].sort(key=lambda x: x["mae"])
 
-    clf_data = {'XGBoost': [], 'Random Forest': [], 'Logistic': [], 'Decision Tree': []}
+    # ---------------------------------
+    # CLASSIFICATION RESULTS
+    # ---------------------------------
+    clf_data = {
+        'XGBoost': [],
+        'Random Forest': [],
+        'Logistic': [],
+        'Decision Tree': []
+    }
+
     for key, acc in results.get("classifiers", {}).get("models", {}).items():
         if '_' not in key:
             continue
+
         part, algo = key.rsplit('_', 1)
-        # Clean the category name
         cleaned_part = clean_category_name(part)
+
         if algo in clf_data:
             best_algo = results.get("classifiers", {}).get("best", {}).get(part, "")
             best = "Best" if best_algo == algo else ""
-            # Check if this part already exists
-            existing_part = next((p for p in clf_data[algo] if p["part"] == cleaned_part), None)
-            if existing_part:
-                # Keep the better accuracy (higher is better)
-                if acc > existing_part["acc"]:
-                    existing_part["acc"] = acc
-                    existing_part["best"] = best
+
+            existing = next((p for p in clf_data[algo] if p["part"] == cleaned_part), None)
+            if existing:
+                if acc > existing["acc"]:
+                    existing["acc"] = acc
+                    existing["best"] = best
             else:
-                clf_data[algo].append({"part": cleaned_part, "acc": acc, "best": best})
-    
-    # Sort each algorithm's results by accuracy (descending)
+                clf_data[algo].append({
+                    "part": cleaned_part,
+                    "acc": round(acc * 100, 2),
+                    "best": best
+                })
+
     for algo in clf_data:
         clf_data[algo].sort(key=lambda x: x["acc"], reverse=True)
 
+    # ---------------------------------
+    # FINAL CONTEXT
+    # ---------------------------------
     context = {
+        "latest_file": latest_file,
         "reg_data": reg_data,
         "clf_data": clf_data,
-        "latest_file": latest_file
     }
-    return render(request, 'analysi/algorithms.html', context)
+
+    return render(request, "analysi/algorithms.html", context)
 # ========================================
 # RAW DATA VIEW
 # ========================================
