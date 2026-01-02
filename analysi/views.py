@@ -553,20 +553,11 @@ def home(request):
 # UPLOAD FILE
 # ========================================
 def upload_file(request):
-    import os
-    from django.shortcuts import render, redirect
-    from django.contrib import messages
-    from django.conf import settings
-    from django.utils.text import get_valid_filename
-    from django.core.cache import cache
-    from .forms import UploadFileForm
-
     upload_dir = os.path.join(settings.MEDIA_ROOT, 'uploads')
     os.makedirs(upload_dir, exist_ok=True)
 
     if request.method == 'POST':
         form = UploadFileForm(request.POST, request.FILES)
-
         if form.is_valid():
             file = request.FILES['file']
             safe_name = get_valid_filename(file.name)
@@ -580,21 +571,21 @@ def upload_file(request):
                 messages.error(request, f"Error saving file: {str(e)}")
                 return redirect('upload_file')
 
-            # 🧹 cleanup temp excel files
+            # Cleanup temp Excel files
             for f_name in os.listdir(upload_dir):
                 if f_name.startswith('~$') and f_name.endswith(('.xlsx', '.xls')):
+                    temp_path = os.path.join(upload_dir, f_name)
                     try:
-                        os.remove(os.path.join(upload_dir, f_name))
-                    except:
+                        os.remove(temp_path)
+                    except Exception:
                         pass
 
-            # ✅ VERY IMPORTANT
-            # New file → old ML is invalid → clear cache
+            # ✅ ONLY FIX (DO NOT CHANGE ANYTHING ELSE)
+            from django.core.cache import cache
             cache.delete("ML_RESULTS")
 
-            messages.success(request, f"{file.name} uploaded successfully!")
-            return redirect('dashboard')   # ✅ GO TO DASHBOARD SAFELY
-
+            messages.success(request, f"{file.name} uploaded!")
+            return redirect('dashboard')
     else:
         form = UploadFileForm()
 
