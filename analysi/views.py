@@ -670,10 +670,9 @@ def dashboard(request):
     from django.conf import settings
     from django.shortcuts import render, redirect
     from django.contrib import messages
-    from django.core.cache import cache
 
     from .ml.extract import extract_data
-    from .ml.predict import train_models
+    from .ml.ml_cache import load_ml_results
 
     upload_dir = os.path.join(settings.MEDIA_ROOT, 'uploads')
     os.makedirs(upload_dir, exist_ok=True)
@@ -685,7 +684,7 @@ def dashboard(request):
 
     file_path = os.path.join(upload_dir, latest_file)
 
-    # ---------- DATA ----------
+    # ---------------- DATA ----------------
     df = extract_data(file_path)
     if df is None or df.empty:
         messages.error(request, "No data extracted!")
@@ -695,88 +694,77 @@ def dashboard(request):
     df['date'] = pd.to_datetime(df['date'], errors='coerce')
     df = df.dropna(subset=['date'])
 
-    try:
-        df_raw = pd.read_excel(file_path)
-    except Exception:
-        df_raw = None
-
-    # ---------- LOAD ML FROM CACHE ----------
-    results = cache.get("ML_RESULTS")
-
-    # 🔥 SAFE FALLBACK (ONLY IF CACHE EMPTY)
+    # ---------------- LOAD ML (NO TRAINING) ----------------
+    results = load_ml_results()
     if results is None:
-        try:
-            df_light = df.sample(min(500, len(df)), random_state=42)
-            results = train_models(df_light, df_raw)
-            cache.set("ML_RESULTS", results, timeout=60 * 60)
-        except Exception as e:
-            messages.error(request, f"ML failed: {e}")
-            results = {}
+        messages.error(
+            request,
+            "ML results not found. Please open Algorithms page once."
+        )
+        return redirect('algorithms')
 
-    # ---------- FAILURE RATE ----------
+    # ---------------- FAILURE RATE SUMMARY ----------------
+    raw_categories = set(df['category_clean'].unique())
     failure_rate_list = []
-    for cat in df['category_clean'].unique():
+
+    for cat in raw_categories:
         cat_df = df[df['category_clean'] == cat]
-        plan = cat_df['plan'].sum()
-        failure = max(cat_df['failure'].sum(), 0)
-        rate = round((failure / plan * 100), 2) if plan > 0 else 0
+        plan_sum = cat_df['plan'].sum()
+        failure_sum = max(cat_df['failure'].sum(), 0)
+
+        rate = (failure_sum / plan_sum * 100) if plan_sum > 0 else 0
+        rate = round(min(rate, 100), 2)
 
         failure_rate_list.append({
             "part": cat,
-            "total_plan": int(plan),
-            "total_failure": int(failure),
-            "rate": min(rate, 100)
+            "total_plan": int(plan_sum),
+            "total_failure": int(failure_sum),
+            "rate": rate
         })
 
     top_failure_rate = sorted(
-        failure_rate_list, key=lambda x: x["rate"], reverse=True
+        failure_rate_list,
+        key=lambda x: x["rate"],
+        reverse=True
     )[:5]
 
-    # ---------- FAILURE TRENDS ----------
+    # ---------------- FAILURE TRENDS ----------------
     failure_trends = {}
 
-    for cat in df['category_clean'].unique():
+    for cat in raw_categories:
         cat_df = df[df['category_clean'] == cat].sort_values('date')
+        if cat_df.empty:
+            continue
 
-        plan_vals, actual_vals, failure_vals, rates, dates = [], [], [], [], []
+        failure_trends[cat] = {
+            "dates": cat_df['date'].dt.strftime('%Y-%m-%d').tolist(),
+            "plan_values": cat_df['plan'].tolist(),
+            "actual_values": cat_df['actual'].tolist(),
+            "failure_values": cat_df['failure'].tolist(),
+            "failure_rates": [
+                round((f / p) * 100, 2) if p > 0 else 0
+                for f, p in zip(cat_df['failure'], cat_df['plan'])
+            ]
+        }
 
-        for _, r in cat_df.iterrows():
-            if r['plan'] > 0:
-                fr = round(min((max(r['failure'], 0) / r['plan']) * 100, 100), 2)
-                plan_vals.append(int(r['plan']))
-                actual_vals.append(int(r['actual']))
-                failure_vals.append(int(max(r['failure'], 0)))
-                rates.append(fr)
-                dates.append(r['date'].strftime('%Y-%m-%d'))
+    reg_models = results.get("regressors", {}).get("models", {})
+    reg_best = results.get("regressors", {}).get("best", {})
+    clf_models = results.get("classifiers", {}).get("models", {})
+    clf_best = results.get("classifiers", {}).get("best", {})
 
-        if dates:
-            failure_trends[cat] = {
-                "dates": dates,
-                "plan_values": plan_vals,
-                "actual_values": actual_vals,
-                "failure_values": failure_vals,
-                "failure_rates": rates,
-            }
-
-    # ---------- CONTEXT ----------
     context = {
-        "latest_file": latest_file,
-
-        # ML TABLES ✅
-        "reg_models": results.get("regressors", {}).get("models", {}),
-        "reg_best": results.get("regressors", {}).get("best", {}),
-        "clf_models": results.get("classifiers", {}).get("models", {}),
-        "clf_best": results.get("classifiers", {}).get("best", {}),
-
-        # CHARTS ✅
-        "failure_trends": failure_trends,
-        "top_failure_rate": top_failure_rate,
-
-        # METRICS
         "results": results,
+        "latest_file": latest_file,
+        "reg_models": reg_models,
+        "reg_best": reg_best,
+        "clf_models": clf_models,
+        "clf_best": clf_best,
+        "top_failure_rate": top_failure_rate,
+        "failure_trends": failure_trends,
     }
 
     return render(request, "analysi/dashboard.html", context)
+
 
 def get_latest_file(upload_dir):
     files = [f for f in os.listdir(upload_dir) if f.endswith(('.xlsx', '.xls')) and not f.startswith('~$')]
@@ -807,7 +795,7 @@ def charts_page(request):
 
     # Read raw Excel file for ML training
     try:
-        df_raw = pd.read_excel(file_path)
+        df_raw = pd.read_excel(file_path,nrows=800)
     except Exception as e:
         print(f"Error reading raw Excel: {e}")
         df_raw = None
@@ -956,58 +944,66 @@ def delete_file(request, filename):
 def algorithms(request):
     import os
     import pandas as pd
-    from django.core.cache import cache
     from django.shortcuts import render, redirect
     from django.contrib import messages
     from django.conf import settings
 
     from .ml.extract import extract_data
     from .ml.predict import train_models
+    from .ml.ml_cache import save_ml_results
 
     upload_dir = os.path.join(settings.MEDIA_ROOT, 'uploads')
-    os.makedirs(upload_dir, exist_ok=True)
+    if not os.path.exists(upload_dir):
+        messages.error(request, "Upload directory missing")
+        return redirect('upload_file')
 
     latest_file = get_latest_file(upload_dir)
     if not latest_file:
-        messages.error(request, "Upload Excel file first!")
+        messages.error(request, "Upload file first!")
         return redirect('upload_file')
 
     file_path = os.path.join(upload_dir, latest_file)
 
-    # ---------- DATA ----------
+    # -------- DATA --------
     df = extract_data(file_path)
     if df is None or df.empty:
-        messages.error(request, "No data extracted!")
+        messages.error(request, "No data extracted from Excel")
         return redirect('upload_file')
 
     try:
-        df_raw = pd.read_excel(file_path)
+        df_raw = pd.read_excel(file_path, nrows=800)
     except Exception:
         df_raw = None
 
-    # ---------- ML TRAINING (ONLY HERE) ----------
-    try:
-        results = train_models(df, df_raw)
-    except Exception as e:
-        messages.error(request, f"ML training failed: {e}")
-        return redirect('upload_file')
-
+    # -------- ML TRAIN (ONLY HERE) --------
+    results = train_models(df, df_raw)
     if not isinstance(results, dict):
-        messages.error(request, "Invalid ML output")
+        messages.error(request, "ML training failed")
         return redirect('upload_file')
 
-    # ✅ SAVE RESULTS FOR DASHBOARD
-    cache.set("ML_RESULTS", results, timeout=60 * 60)
+    # ✅ SAVE FOR DASHBOARD
+    save_ml_results(results)
+
+    # -------- PREPARE TABLE DATA (THIS WAS MISSING) --------
+    reg_models = results.get("regressors", {}).get("models", {})
+    reg_best = results.get("regressors", {}).get("best", {})
+
+    clf_models = results.get("classifiers", {}).get("models", {})
+    clf_best = results.get("classifiers", {}).get("best", {})
 
     context = {
         "latest_file": latest_file,
-        "reg_models": results.get("regressors", {}).get("models", {}),
-        "reg_best": results.get("regressors", {}).get("best", {}),
-        "clf_models": results.get("classifiers", {}).get("models", {}),
-        "clf_best": results.get("classifiers", {}).get("best", {}),
+        "reg_models": reg_models,
+        "reg_best": reg_best,
+        "clf_models": clf_models,
+        "clf_best": clf_best,
     }
 
+    messages.success(request, "ML models trained successfully!")
+
     return render(request, "analysi/algorithms.html", context)
+
+
 # ========================================
 # RAW DATA VIEW
 # ========================================
@@ -1119,13 +1115,13 @@ def future_predictions(request):
     file_path = os.path.join(upload_dir, latest_file)
 
     # Extract data and validate
-    df = extract_data(file_path)
+    df_raw = pd.read_excel(file_path, nrows=800)
     if df.empty:
         messages.error(request, "No data extracted!")
         return redirect('upload_file')
 
     try:
-        df_raw = pd.read_excel(file_path)
+        df_raw = pd.read_excel(file_path,nrows=800)
     except Exception as e:
         print(f"Error reading raw Excel: {e}")
         df_raw = None
@@ -1255,13 +1251,13 @@ def financial_dashboard(request):
 
     file_path = os.path.join(upload_dir, latest_file)
 
-    df = extract_data(file_path)
+    df_raw = pd.read_excel(file_path, nrows=800)
     if df.empty:
         messages.error(request, "No data extracted!")
         return redirect('upload_file')
 
     try:
-        df_raw = pd.read_excel(file_path)
+        df_raw = pd.read_excel(file_path,nrows=800)
     except Exception as e:
         print(f"Error reading raw Excel: {e}")
         df_raw = None
