@@ -1,1 +1,1 @@
-web: gunicorn failure_ai.wsgi --workers=1 --threads=2 --timeout=600 --preload --max-requests=50
+web: gunicorn failure_ai.wsgi --workers=1 --threads=2 --timeout=600
