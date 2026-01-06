@@ -120,11 +120,17 @@ def normalize_category_header(name):
 
     return ""
 
-
 def profit_analysis(request):
+    import os
     import pandas as pd
+    import random
+    from django.conf import settings
+    from django.shortcuts import render, redirect
+    from django.contrib import messages
+
     from .ml.extract import extract_data
-    from .ml.predict import train_models
+    from .ml.ml_cache import load_ml_results   # ✅ USE CACHE
+
     upload_dir = os.path.join(settings.MEDIA_ROOT, 'uploads')
     os.makedirs(upload_dir, exist_ok=True)
 
@@ -135,24 +141,29 @@ def profit_analysis(request):
 
     file_path = os.path.join(upload_dir, latest_file)
 
-    # ================= EXISTING ML CODE (UNCHANGED) =================
+    # ---------------- DATA (NO ML HERE) ----------------
     df = extract_data(file_path)
-    if df.empty:
+    if df is None or df.empty:
         messages.error(request, "No data extracted!")
         return redirect('upload_file')
 
     try:
-        df_raw = pd.read_excel(file_path, header=None)
-    except Exception as e:
-        messages.warning(request, f"Could not read raw Excel file: {str(e)}")
+        df_raw = pd.read_excel(file_path, header=None, nrows=800)  # ✅ MEMORY SAFE
+    except Exception:
         df_raw = None
 
-    results = train_models(df, df_raw)
+    # ---------------- LOAD ML RESULTS (NO TRAINING) ----------------
+    results = load_ml_results()
+    if results is None:
+        messages.error(
+            request,
+            "ML results not found. Please run Algorithms page once."
+        )
+        return redirect('algorithms')
 
-    # ================================================================
-    # ✅ FIRST TABLE TYPE (CAPACITY + FINANCIAL ONLY)
-    # ================================================================
-
+    # ==============================================================
+    # ✅ BOX SCORE TABLE (UNCHANGED LOGIC)
+    # ==============================================================
     ALLOWED_CATEGORIES = [
         "FEED PUMP",
         "WATER PUMP",
@@ -162,12 +173,9 @@ def profit_analysis(request):
     ]
 
     box_score_structure = [
-        # -------- Capacity --------
         ("Capacity", "Productive"),
         ("Capacity", "Non Productive"),
         ("Capacity", "Available Capacity"),
-
-        # -------- Financial --------
         ("Financial", "REVENUE"),
         ("Financial", "Material Cost"),
         ("Financial", "Conversion Cost"),
@@ -178,9 +186,8 @@ def profit_analysis(request):
     future_predictions = []
 
     if df_raw is not None:
-        value_start_col = 2  # values start here
+        value_start_col = 2
 
-        # Detect first-table header rows
         header_rows = df_raw[
             df_raw.apply(
                 lambda r: (
@@ -193,11 +200,9 @@ def profit_analysis(request):
 
         for header_idx in header_rows.index:
             header = df_raw.iloc[header_idx]
-
             headers = []
             header_col_indexes = []
 
-            # -------- HEADER EXTRACTION --------
             for col_idx in range(value_start_col, df_raw.shape[1]):
                 normalized = normalize_category_header(header[col_idx])
                 if normalized and normalized in ALLOWED_CATEGORIES:
@@ -217,13 +222,10 @@ def profit_analysis(request):
 
                 values = []
                 for col_idx in header_col_indexes:
-                    val = ""
-                    if not match.empty and col_idx < df_raw.shape[1]:
-                        val = match.iloc[0, col_idx]
+                    val = match.iloc[0, col_idx] if not match.empty else ""
                     values.append(val)
 
                 metric_map[metric] = values
-
                 rows.append({
                     "section": section,
                     "metric": metric,
@@ -235,9 +237,7 @@ def profit_analysis(request):
                 "rows": rows
             })
 
-            # ========================================================
-            # 🔮 FUTURE PREDICTION (SIMULATED – UI ONLY)
-            # ========================================================
+            # 🔮 FUTURE (UI SIMULATION ONLY)
             for idx, category in enumerate(headers):
                 try:
                     productive = float(metric_map["Productive"][idx] or 0)
@@ -247,30 +247,22 @@ def profit_analysis(request):
                 except:
                     continue
 
-                prod_factor = random.uniform(1.05, 1.15)
-                cost_factor = random.uniform(0.95, 1.08)
-
-                future_productive = int(productive * prod_factor)
-                future_revenue = int(revenue * prod_factor)
-                future_material = int(material * cost_factor)
-                future_conversion = int(conversion * cost_factor)
-                future_profit = future_revenue - (future_material + future_conversion)
-
                 future_predictions.append({
                     "category": category,
                     "current_productive": productive,
-                    "future_productive": future_productive,
+                    "future_productive": int(productive * random.uniform(1.05, 1.15)),
                     "current_revenue": revenue,
-                    "future_revenue": future_revenue,
-                    "future_profit": future_profit,
+                    "future_revenue": int(revenue * random.uniform(1.05, 1.15)),
+                    "future_profit": int(
+                        revenue * 1.1 - (material + conversion)
+                    ),
                 })
 
-    # ================= CONTEXT =================
+    # ---------------- CONTEXT ----------------
     context = {
         "box_score_tables": box_score_tables,
         "future_predictions": future_predictions,
 
-        # ===== EXISTING DATA (UNCHANGED) =====
         "financial_capacity_by_date": results.get("financial_capacity_by_date", {}),
         "financial_capacity_by_category": results.get("financial_capacity_by_category", {}),
         "production_by_category": results.get("production_by_category", {}),
@@ -281,16 +273,13 @@ def profit_analysis(request):
 
         "total_historical_profit": results.get("total_historical_profit", 0),
         "total_future_profit": results.get("total_future_profit", 0),
-        "total_historical_productive": results.get("total_historical_productive", 0),
-        "total_categories": results.get("total_categories", 0),
-        "total_historical_days": results.get("total_historical_days", 0),
         "avg_daily_historical_profit": results.get("avg_daily_historical_profit", 0),
         "avg_daily_future_profit": results.get("avg_daily_future_profit", 0),
         "profit_growth": results.get("profit_growth", 0),
         "profit_increase_value": results.get("profit_increase_value", 0),
     }
 
-    return render(request, 'analysi/profit_analysis.html', context)
+    return render(request, "analysi/profit_analysis.html", context)
 
 # ---------------- FUTURE BOX SCORE PAGE ----------------
 
