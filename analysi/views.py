@@ -931,56 +931,21 @@ def delete_file(request, filename):
 # ALGORITHMS
 # ========================================
 def algorithms(request):
-    import os
-    import pandas as pd
     from django.shortcuts import render, redirect
     from django.contrib import messages
-    from django.conf import settings
+    from .ml.ml_cache import load_ml_results
 
-    from .ml.extract import extract_data
-    from .ml.predict import train_models
-    from .ml.ml_cache import save_ml_results
+    # 🔥 ONLY LOAD ML RESULTS (NO TRAINING)
+    results = load_ml_results()
 
-    upload_dir = os.path.join(settings.MEDIA_ROOT, "uploads")
-    os.makedirs(upload_dir, exist_ok=True)
-
-    latest_file = get_latest_file(upload_dir)
-    if not latest_file:
-        messages.error(request, "Upload Excel file first")
+    if results is None:
+        messages.error(
+            request,
+            "ML results not found. Train ML locally once and deploy."
+        )
         return redirect("upload_file")
 
-    file_path = os.path.join(upload_dir, latest_file)
-
-    # ---------------- DATA EXTRACTION ----------------
-    df = extract_data(file_path)
-    if df is None or df.empty:
-        messages.error(request, "No data extracted from Excel")
-        return redirect("upload_file")
-
-    # 🔥 VERY IMPORTANT – LIMIT DATA (RENDER SAFE)
-    if len(df) > 500:
-        df = df.sample(500, random_state=42)
-
-    try:
-        df_raw = pd.read_excel(file_path, nrows=800)
-    except Exception:
-        df_raw = None
-
-    # ---------------- ML TRAIN (ONLY HERE) ----------------
-    try:
-        results = train_models(df, df_raw)
-    except Exception as e:
-        messages.error(request, f"ML failed: {e}")
-        return redirect("upload_file")
-
-    if not isinstance(results, dict):
-        messages.error(request, "Invalid ML output")
-        return redirect("upload_file")
-
-    # ---------------- SAVE RESULTS ----------------
-    save_ml_results(results)
-
-    # ---------------- PREPARE REGRESSION TABLE ----------------
+    # ---------------- REGRESSION TABLE ----------------
     reg_data = {
         "XGBoost": [],
         "Random Forest": [],
@@ -1000,7 +965,7 @@ def algorithms(request):
                 "best": "Best" if best_algo == algo else ""
             })
 
-    # ---------------- PREPARE CLASSIFICATION TABLE ----------------
+    # ---------------- CLASSIFICATION TABLE ----------------
     clf_data = {
         "XGBoost": [],
         "Random Forest": [],
@@ -1020,14 +985,10 @@ def algorithms(request):
                 "best": "Best" if best_algo == algo else ""
             })
 
-    messages.success(request, "ML models trained successfully!")
-
     return render(request, "analysi/algorithms.html", {
-        "latest_file": latest_file,
         "reg_data": reg_data,
         "clf_data": clf_data
     })
-
 
 # ========================================
 # RAW DATA VIEW
