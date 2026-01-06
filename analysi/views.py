@@ -941,56 +941,92 @@ def algorithms(request):
     from .ml.predict import train_models
     from .ml.ml_cache import save_ml_results
 
-    upload_dir = os.path.join(settings.MEDIA_ROOT, 'uploads')
-    if not os.path.exists(upload_dir):
-        messages.error(request, "Upload directory missing")
-        return redirect('upload_file')
+    upload_dir = os.path.join(settings.MEDIA_ROOT, "uploads")
+    os.makedirs(upload_dir, exist_ok=True)
 
     latest_file = get_latest_file(upload_dir)
     if not latest_file:
-        messages.error(request, "Upload file first!")
-        return redirect('upload_file')
+        messages.error(request, "Upload Excel file first")
+        return redirect("upload_file")
 
     file_path = os.path.join(upload_dir, latest_file)
 
-    # -------- DATA --------
+    # ---------------- DATA EXTRACTION ----------------
     df = extract_data(file_path)
     if df is None or df.empty:
         messages.error(request, "No data extracted from Excel")
-        return redirect('upload_file')
+        return redirect("upload_file")
+
+    # 🔥 VERY IMPORTANT – LIMIT DATA (RENDER SAFE)
+    if len(df) > 500:
+        df = df.sample(500, random_state=42)
 
     try:
         df_raw = pd.read_excel(file_path, nrows=800)
     except Exception:
         df_raw = None
 
-    # -------- ML TRAIN (ONLY HERE) --------
-    results = train_models(df, df_raw)
-    if not isinstance(results, dict):
-        messages.error(request, "ML training failed")
-        return redirect('upload_file')
+    # ---------------- ML TRAIN (ONLY HERE) ----------------
+    try:
+        results = train_models(df, df_raw)
+    except Exception as e:
+        messages.error(request, f"ML failed: {e}")
+        return redirect("upload_file")
 
-    # ✅ SAVE FOR DASHBOARD
+    if not isinstance(results, dict):
+        messages.error(request, "Invalid ML output")
+        return redirect("upload_file")
+
+    # ---------------- SAVE RESULTS ----------------
     save_ml_results(results)
 
-    # -------- PREPARE TABLE DATA (THIS WAS MISSING) --------
-    reg_models = results.get("regressors", {}).get("models", {})
-    reg_best = results.get("regressors", {}).get("best", {})
-
-    clf_models = results.get("classifiers", {}).get("models", {})
-    clf_best = results.get("classifiers", {}).get("best", {})
-
-    context = {
-        "latest_file": latest_file,
-        "reg_models": reg_models,
-        "reg_best": reg_best,
-        "clf_models": clf_models,
-        "clf_best": clf_best,
+    # ---------------- PREPARE REGRESSION TABLE ----------------
+    reg_data = {
+        "XGBoost": [],
+        "Random Forest": [],
+        "Linear": [],
+        "Decision Tree": []
     }
+
+    for key, mae in results.get("regressors", {}).get("models", {}).items():
+        if "_" not in key:
+            continue
+        part, algo = key.rsplit("_", 1)
+        if algo in reg_data:
+            best_algo = results.get("regressors", {}).get("best", {}).get(part, "")
+            reg_data[algo].append({
+                "part": part,
+                "mae": round(mae, 3),
+                "best": "Best" if best_algo == algo else ""
+            })
+
+    # ---------------- PREPARE CLASSIFICATION TABLE ----------------
+    clf_data = {
+        "XGBoost": [],
+        "Random Forest": [],
+        "Logistic": [],
+        "Decision Tree": []
+    }
+
+    for key, acc in results.get("classifiers", {}).get("models", {}).items():
+        if "_" not in key:
+            continue
+        part, algo = key.rsplit("_", 1)
+        if algo in clf_data:
+            best_algo = results.get("classifiers", {}).get("best", {}).get(part, "")
+            clf_data[algo].append({
+                "part": part,
+                "acc": round(acc, 2),
+                "best": "Best" if best_algo == algo else ""
+            })
 
     messages.success(request, "ML models trained successfully!")
 
-    return render(request, "analysi/algorithms.html", context)
+    return render(request, "analysi/algorithms.html", {
+        "latest_file": latest_file,
+        "reg_data": reg_data,
+        "clf_data": clf_data
+    })
 
 
 # ========================================
