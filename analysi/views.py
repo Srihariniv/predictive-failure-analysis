@@ -659,38 +659,23 @@ def get_category_color(category):
 # --------------------------------------
 # MAIN DASHBOARD VIEW WITH COLOR SUPPORT
 # --------------------------------------
+# --------------------------------------
+# MAIN DASHBOARD VIEW WITH COLOR SUPPORT
+# --------------------------------------
 def dashboard(request):
     import os
     import pandas as pd
-    import numpy as np  # ADDED for safe fallbacks
-    from django.core.cache import cache
+    from django.conf import settings
     from django.shortcuts import render, redirect
     from django.contrib import messages
-    from django.conf import settings
 
-    # LAZY IMPORTS
     from .ml.extract import extract_data
     from .ml.predict import train_models
 
     upload_dir = os.path.join(settings.MEDIA_ROOT, 'uploads')
     os.makedirs(upload_dir, exist_ok=True)
 
-    # ✅ FIXED: get_latest_file function (was missing)
-    def get_latest_file(directory):
-        files = [f for f in os.listdir(directory) if f.endswith(('.xlsx', '.xls')) and not f.startswith('~$')]
-        if not files: return None
-        return max(files, key=lambda f: os.path.getmtime(os.path.join(directory, f)))
-
-    # ✅ FIXED: clean_category_name & get_category_color (were missing)
-    def clean_category_name(name):
-        if pd.isna(name): return "UNKNOWN"
-        return str(name).strip().upper().replace('&', 'AND')
-
-    def get_category_color(cat):
-        colors = {'FEED PUMP': '#FF6B6B', 'WATER PUMP': '#4ECDC4', 'PCN': '#45B7D1',
-                  'COOLANT ELBOW': '#96CEB4', 'COOLANT ELBOW AND COVERS': '#FFEAA7'}
-        return colors.get(cat, '#95A5A6')
-
+    # ---------------- FILE ----------------
     latest_file = get_latest_file(upload_dir)
     if not latest_file:
         messages.error(request, "No Excel file uploaded!")
@@ -698,116 +683,174 @@ def dashboard(request):
 
     file_path = os.path.join(upload_dir, latest_file)
 
+    # ---------------- DATA ----------------
     df = extract_data(file_path)
     if df is None or df.empty:
-        messages.error(request, "No data extracted from Excel!")
+        messages.error(request, "No data extracted!")
         return redirect('upload_file')
 
     df['category_clean'] = df['category'].apply(clean_category_name)
+    df['date'] = pd.to_datetime(df['date'], errors='coerce')
+    df = df.dropna(subset=['date'])
 
-    # ✅ CACHED ML (24h timeout)
-    cache_key = f"ML_RESULTS_{latest_file}"
-    results = cache.get(cache_key)
+    try:
+        df_raw = pd.read_excel(file_path)
+    except Exception:
+        df_raw = None
 
-    if results is None:
-        try:
-            # ✅ RENDER FREE: Light data (prevents OOM/timeout)
-            df_light = df.sample(min(500, len(df)), random_state=42).astype({col: 'float32' for col in df.select_dtypes(include=['float64']).columns})
-            df_raw_light = pd.read_excel(file_path, nrows=800)  # Limit Excel read
-            results = train_models(df_light, df_raw_light)
-            cache.set(cache_key, results, timeout=60*24)  # 24h
-        except Exception as e:
-            print(f"ML Error: {e}")
-            results = {"regressors": {}, "classifiers": {}}  # Fallback for boxes
-            messages.warning(request, "ML processing light mode.")
+    # ---------------- ML ----------------
+    results = train_models(df, df_raw)
+    if not isinstance(results, dict):
+        messages.error(request, "Invalid ML results")
+        return redirect('upload_file')
 
-    # ✅ EXTRACT REGRESSION/CLASSIFIER FOR BOXES (TEMPLATE NEEDS)
-    reg_data = results.get('regressors', {}).get('models', {'Random Forest': 'N/A', 'XGBoost': 'N/A'})
-    clf_data = results.get('classifiers', {}).get('models', {'Decision Tree': 'N/A', 'Logistic': 'N/A'})
-
-    # [KEEP ALL YOUR EXISTING PROCESSING BELOW - unchanged]
+    # ---------------- FILTER PREDICTIONS ----------------
     raw_categories = set(df['category_clean'].unique())
 
-    def filter_predictions(data_list):
-        filtered = []
-        for p in data_list or []:
-            part = p.get("part") or p.get("category")
-            if clean_category_name(part) in raw_categories:
-                filtered.append(p)
-        return filtered
+    def filter_predictions(data):
+        out = []
+        for p in data or []:
+            part = clean_category_name(p.get("part") or p.get("category"))
+            if part in raw_categories:
+                out.append(p)
+        return out
 
-    predictions = filter_predictions(results.get("predictions", []))
-    next_predictions = filter_predictions(results.get("next_month_30_predictions", []))
-    top_risks = filter_predictions(results.get("top_risks", []))
+    results["predictions"] = filter_predictions(results.get("predictions", []))
+    results["top_risks"] = filter_predictions(results.get("top_risks", []))
 
+    # ---------------- FAILURE RATE SUMMARY ----------------
     failure_rate_list = []
-    unique_cats = df['category_clean'].unique()
-    for cat in unique_cats:
-        data = df[df['category_clean'] == cat]
-        plan = data['plan'].sum()
-        failure = data['failure'].sum()
-        rate = (failure / plan) * 100 if plan > 0 else 0
+    for cat in raw_categories:
+        cat_df = df[df['category_clean'] == cat]
+        plan_sum = cat_df['plan'].sum()
+        failure_sum = max(cat_df['failure'].sum(), 0)   # ✅ FIX 1
+
+        rate = (failure_sum / plan_sum * 100) if plan_sum > 0 else 0
+        rate = round(min(rate, 100), 2)                  # ✅ FIX 1
+
         failure_rate_list.append({
             "part": cat,
-            "total_plan": int(plan),
-            "total_failure": int(failure),
-            "rate": round(rate, 2)
+            "total_plan": int(plan_sum),
+            "total_failure": int(failure_sum),
+            "rate": rate
         })
 
-    top_failure_rate = sorted(failure_rate_list, key=lambda x: x["rate"], reverse=True)[:5]
+    top_failure_rate = sorted(
+        failure_rate_list, key=lambda x: x["rate"], reverse=True
+    )[:5]
 
+    # ---------------- FAILURE TRENDS (WAVEFORM – BACKUP LOGIC) ----------------
     failure_trends = {}
     all_dates = set()
-    for cat in unique_cats:
+
+    for cat in raw_categories:
         cat_data = df[df['category_clean'] == cat].sort_values('date')
-        dates, rates = [], []
+        if len(cat_data) == 0:
+            continue
+
+        unique_points = set()
+        dedup_dates = []
+        dedup_plan = []
+        dedup_actual = []
+        dedup_failure = []
+        dedup_failure_rate = []
+
         for _, row in cat_data.iterrows():
-            rate = (row['failure'] / row['plan'] * 100) if row['plan'] > 0 else 0
-            dates.append(row['date'].strftime('%Y-%m-%d'))
-            rates.append(round(rate, 2))
-        if dates:
-            failure_trends[cat] = {"dates": dates, "failure_rates": rates}
-            all_dates.update(dates)
+            if row['plan'] <= 0:
+                continue
+
+            failure_count = max(row['failure'], 0)   # ✅ FIX 1
+            failure_rate = (failure_count / row['plan']) * 100
+            failure_rate = round(min(failure_rate, 100), 2)  # ✅ FIX 1
+
+            point_key = (
+                int(row['plan']),
+                int(row['actual']),
+                failure_rate,
+                failure_count
+            )
+
+            if point_key not in unique_points:
+                unique_points.add(point_key)
+                dedup_dates.append(row['date'].strftime('%Y-%m-%d'))
+                dedup_plan.append(int(row['plan']))
+                dedup_actual.append(int(row['actual']))
+                dedup_failure.append(int(failure_count))
+                dedup_failure_rate.append(failure_rate)
+
+        if dedup_dates:
+            failure_trends[cat] = {
+                "dates": dedup_dates,
+                "plan_values": dedup_plan,
+                "actual_values": dedup_actual,
+                "failure_values": dedup_failure,
+                "failure_rates": dedup_failure_rate
+            }
+            all_dates.update(dedup_dates)
 
     common_dates = sorted(all_dates)
-    category_colors = {cat: get_category_color(cat) for cat in unique_cats}
 
+    # ---------------- COLORS ----------------
+    category_colors = {cat: get_category_color(cat) for cat in raw_categories}
+
+    # ---------------- RISK DISTRIBUTION ----------------
     risk_distribution = {'LOW': 0, 'MED': 0, 'HIGH': 0}
-    for p in predictions:
-        risk_distribution[p.get('risk', 'LOW')] = risk_distribution.get(p.get('risk', 'LOW'), 0) + 1
+    for p in results.get("predictions", []):
+        risk_distribution[p.get("risk", "LOW")] += 1
 
+    # ---------------- PRODUCTION OVERVIEW ----------------
     production_overview = {
         "total_plan": int(df['plan'].sum()),
         "total_actual": int(df['actual'].sum()),
-        "total_failure": int(df['failure'].sum()),
-        "efficiency_rate": round((df['actual'].sum() / df['plan'].sum() * 100) if df['plan'].sum() > 0 else 0, 2)
+        "total_failure": int(max(df['failure'].sum(), 0)),
+        "efficiency_rate": round(
+            (df['actual'].sum() / df['plan'].sum() * 100)
+            if df['plan'].sum() > 0 else 0, 2
+        )
     }
 
+    # ---------------- FINANCIAL SUMMARY ----------------
     financial_summary = results.get("financial_summary", {})
     financial_economics = results.get("financial_economics", {})
+
     total_planned_revenue = financial_summary.get("total_planned_revenue", 0)
     total_actual_revenue = financial_summary.get("total_actual_revenue", 0)
-    revenue_efficiency = ((total_actual_revenue / total_planned_revenue) * 100 if total_planned_revenue > 0 else 0)
+    total_lost_revenue = financial_summary.get("total_lost_revenue", 0)
 
-    # ✅ FINAL CONTEXT WITH BOX DATA
+    revenue_efficiency = (
+        (total_actual_revenue / total_planned_revenue) * 100
+        if total_planned_revenue > 0 else 0
+    )
+
+    # ---------------- TABLE DATA ----------------
+    reg_models = results.get("regressors", {}).get("models", {})
+    reg_best = results.get("regressors", {}).get("best", {})
+    clf_models = results.get("classifiers", {}).get("models", {})
+    clf_best = results.get("classifiers", {}).get("best", {})
+
+    # ---------------- CONTEXT ----------------
     context = {
-        "latest_file": latest_file,
-        "reg_data": reg_data,  # ✅ Regression boxes
-        "clf_data": clf_data,  # ✅ Classifier boxes
         "results": results,
-        "predictions": predictions,
-        "top_parts": top_risks,
+        "latest_file": latest_file,
+
+        "reg_models": reg_models,
+        "reg_best": reg_best,
+        "clf_models": clf_models,
+        "clf_best": clf_best,
+
+        "top_failure_rate": top_failure_rate,
         "failure_trends": failure_trends,
         "common_dates": common_dates,
         "category_colors": category_colors,
         "risk_distribution": risk_distribution,
-        "top_failure_rate": top_failure_rate,
         "production_overview": production_overview,
+
         "financial_summary": financial_summary,
         "financial_economics": financial_economics,
         "revenue_efficiency": round(revenue_efficiency, 2),
         "total_planned_revenue": round(total_planned_revenue, 2),
         "total_actual_revenue": round(total_actual_revenue, 2),
+        "total_lost_revenue": round(total_lost_revenue, 2),
     }
 
     return render(request, "analysi/dashboard.html", context)

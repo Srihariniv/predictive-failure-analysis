@@ -139,18 +139,22 @@
       <div class="bg-white rounded-xl shadow-lg p-6">
         <canvas id="topChart" height="400"></canvas>
       </div>
-    </div>
+    </div> -->
 
-    <!-- Failure Rate vs Production Plan Waveform Chart -->
-    <div class="mb-12">
-      <h2 class="text-4xl font-bold mb-6 text-center text-gray-800 wave-animation">Failure Rate vs Production Plan Analysis</h2>
-      
-      <div class="bg-white rounded-xl shadow-lg p-6">
-        <div class="chart-container">
-          <canvas id="waveformChart"></canvas>
-        </div>
-      </div>
+   <!-- Failure Rate vs Production Plan Waveform Chart -->
+<div class="mb-12">
+  <h2 class="text-4xl font-bold mb-6 text-center text-gray-800 wave-animation">
+    Failure Rate vs Production Plan Analysis
+  </h2>
+
+  <div class="bg-white rounded-xl shadow-lg p-6">
+    <!-- 🔥 HEIGHT FIX IS HERE -->
+    <div class="chart-container" style="height: 450px;">
+      <canvas id="waveformChart"></canvas>
     </div>
+  </div>
+</div>
+
 
     <!-- Failure Rate Table--> 
     <div class="mb-12">
@@ -238,261 +242,181 @@
 
   </div>
 
-  <!-- FULL SCRIPT SECTION -->
   <script>
-    // Color mapping for waveform chart
-    const waveformColors = {
-      'water pump': ['rgba(34, 197, 94, 0.7)', 'rgba(34, 197, 94, 1)'],
-      'feed pump': ['rgba(34, 197, 94, 0.7)', 'rgba(34, 197, 94, 1)'],
-      'pcn': ['rgba(239, 68, 68, 0.7)', 'rgba(239, 68, 68, 1)'],
-      'COOLANT ELBOW & COVERS': ['rgba(168, 85, 247, 0.7)', 'rgba(168, 85, 247, 1)'],
-      'pulley': ['rgba(245, 158, 11, 0.7)', 'rgba(245, 158, 11, 1)'],
-      'PCN': ['rgba(14, 165, 233, 0.7)', 'rgba(14, 165, 233, 1)'],
-      'sensor': ['rgba(20, 184, 166, 0.7)', 'rgba(20, 184, 166, 1)'],
-      'default': ['rgba(59, 130, 246, 0.7)', 'rgba(59, 130, 246, 1)']
-    };
+  // ==============================
+  // COLOR MAPPING
+  // ==============================
+  const waveformColors = {
+    'water pump': ['rgba(34,197,94,0.4)', 'rgba(34,197,94,1)'],
+    'feed pump': ['rgba(16,185,129,0.4)', 'rgba(16,185,129,1)'],
+    'pcn': ['rgba(239,68,68,0.4)', 'rgba(239,68,68,1)'],
+    'coolant elbow': ['rgba(168,85,247,0.4)', 'rgba(168,85,247,1)'],
+    'pulley': ['rgba(245,158,11,0.4)', 'rgba(245,158,11,1)'],
+    'sensor': ['rgba(20,184,166,0.4)', 'rgba(20,184,166,1)'],
+    'default': ['rgba(59,130,246,0.4)', 'rgba(59,130,246,1)']
+  };
 
-    function getWaveformColor(category) {
-      const lowerCategory = category.toLowerCase();
-      for (const [key, colors] of Object.entries(waveformColors)) {
-        if (lowerCategory.includes(key)) return colors;
-      }
-      return waveformColors['default'];
+  function getWaveformColor(category) {
+    const c = category.toLowerCase();
+    for (const key in waveformColors) {
+      if (c.includes(key)) return waveformColors[key];
     }
+    return waveformColors['default'];
+  }
 
-    document.addEventListener('DOMContentLoaded', function () {
+  document.addEventListener('DOMContentLoaded', function () {
 
-      // === TOP 5 PARTS BY TOTAL FAILURES CHART ===
-      const topCtx = document.getElementById('topChart');
-      if (topCtx) {
-        new Chart(topCtx, {
-          type: 'bar',
-          data: {
-            labels: {{ top_labels|safe }},
-            datasets: [{
-              label: 'Total Failures',
-              data: {{ top_values|safe }},
-              backgroundColor: [
-                'rgba(239, 68, 68, 0.8)',
-                'rgba(245, 158, 11, 0.8)',
-                'rgba(251, 191, 36, 0.8)',
-                'rgba(34, 197, 94, 0.8)',
-                'rgba(59, 130, 246, 0.8)'
-              ],
-              borderColor: [
-                'rgb(239, 68, 68)',
-                'rgb(245, 158, 11)',
-                'rgb(251, 191, 36)',
-                'rgb(34, 197, 94)',
-                'rgb(59, 130, 246)'
-              ],
-              borderWidth: 2,
-              borderRadius: 6,
-              borderSkipped: false,
-            }]
-          },
-          options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: {
-              legend: { display: false },
-              title: {
-                display: true,
-                text: 'Top 5 Parts by Total Failures',
-                font: { size: 16, weight: 'bold' },
-                padding: 20
-              },
-              tooltip: {
-                callbacks: {
-                  label: ctx => `Failures: ${ctx.parsed.y}`
-                }
-              }
-            },
-            scales: {
-              y: {
-                beginAtZero: true,
-                title: { display: true, text: 'Number of Failures', font: { weight: 'bold' } },
-                grid: { color: 'rgba(0, 0, 0, 0.05)' }
-              },
-              x: { grid: { display: false } }
-            },
-            animation: { duration: 1500, easing: 'easeOutQuart' }
-          }
-        });
-      }
+    // ==============================
+    // WAVEFORM CHART (MAIN FIX)
+    // ==============================
+    const waveformCtx = document.getElementById('waveformChart');
+    if (!waveformCtx) return;
 
-      // === WAVEFORM CHART ===
-      const waveformCtx = document.getElementById('waveformChart');
-      if (waveformCtx) {
-        const categories = Object.keys({{ failure_trends|safe }});
-        const allDatasets = [];
-        categories.forEach(category => {
-          const trendData = {{ failure_trends|safe }}[category];
-          const [backgroundColor, borderColor] = getWaveformColor(category);
-          const waveformData = [];
-          trendData.plan_values.forEach((plan, index) => {
-            let failureRate = trendData.failure_rates[index] || 0;
-            if (failureRate <= 1) {
-              failureRate = failureRate * 100;
-            }
-            const actual = trendData.actual_values[index] || 0;
-            const failureNum = trendData.failure_values ? trendData.failure_values[index] : '';
-            if (plan > 0 && failureRate > 0) {
-              waveformData.push({
-                x: plan,
-                y: failureRate,
-                actual: actual,
-                category: category,
-                failure: failureNum
-              });
-            }
+    const trends = {{ failure_trends|safe }};
+    const categories = Object.keys(trends || {});
+    const datasets = [];
+
+    categories.forEach(category => {
+      const t = trends[category];
+      if (!t || !t.plan_values) return;
+
+      const [bg, border] = getWaveformColor(category);
+      const points = [];
+
+      t.plan_values.forEach((plan, i) => {
+        const rate = Math.max(0, t.failure_rates[i] || 0);   // 🔒 no negative
+        if (plan > 0) {
+          points.push({
+            x: plan,
+            y: rate,
+            actual: t.actual_values[i] || 0,
+            failure: t.failure_values[i] || 0,
+            category: category
           });
-          waveformData.sort((a, b) => a.x - b.x);
-          allDatasets.push({
-            label: `${category} Failure Pattern`,
-            data: waveformData,
-            type: 'line',
-            borderColor: borderColor,
-            backgroundColor: backgroundColor,
-            borderWidth: 3,
-            tension: 0.4,
-            fill: false,
-            pointRadius: 5,
-            pointHoverRadius: 8,
-            pointBackgroundColor: borderColor,
-            pointBorderColor: '#ffffff',
-            pointBorderWidth: 2
-          });
-          allDatasets.push({
-            label: `${category} Data Points`,
-            data: waveformData,
-            type: 'scatter',
-            backgroundColor: backgroundColor,
-            borderColor: borderColor,
-            borderWidth: 2,
-            pointRadius: 4,
-            pointHoverRadius: 7,
-            showLine: false
-          });
-        });
-
-        new Chart(waveformCtx, {
-          type: 'scatter',
-          data: { datasets: allDatasets },
-          options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: {
-              title: {
-                display: true,
-                text: 'Failure Rate vs Production Plan Analysis',
-                font: { size: 18, weight: 'bold' }
-              },
-              tooltip: {
-                filter: ctx => ctx.dataset.type === 'scatter',
-                callbacks: {
-                  label: ctx => {
-                    const d = ctx.raw;
-                    return [
-                      `Part: ${d.category}`,
-                      `Plan: ${d.x}`,
-                      `Failure: ${d.failure}`,
-                      `Failure Rate: ${d.y}%`,
-                      `Actual: ${d.actual}`
-                    ];
-                  }
-                }
-              },
-              legend: {
-                position: 'top',
-                labels: {
-                  boxWidth: 12,
-                  padding: 15,
-                  font: { size: 11 },
-                  filter: item => !item.text.includes('Data Points')
-                }
-              }
-            },
-            scales: {
-              y: {
-                beginAtZero: true,
-                title: { display: true, text: 'Failure Rate (%)', font: { weight: 'bold', size: 14 } },
-                grid: { color: 'rgba(0, 0, 0, 0.1)' },
-                ticks: { callback: val => val + '%' }
-              },
-              x: {
-                beginAtZero: true,
-                title: { display: true, text: 'Production Plan Quantity', font: { weight: 'bold', size: 14 } },
-                grid: { color: 'rgba(0, 0, 0, 0.05)' }
-              }
-            },
-            interaction: { intersect: false, mode: 'nearest' },
-            elements: { line: { tension: 0.4 } }
-          }
-        });
-      }
-
-      // === GLOBAL SEARCH ===
-      const searchInput = document.getElementById('globalSearch');
-      const rows = document.querySelectorAll('#regBody tr, #clfBody tr, #failureRateTable tbody tr, #next7daysTable tbody tr');
-
-      searchInput.addEventListener('input', function () {
-        const query = this.value.toLowerCase().trim();
-        rows.forEach(row => {
-          const text = row.textContent.toLowerCase();
-          row.style.display = text.includes(query) ? '' : 'none';
-        });
+        }
       });
 
-      // === PDF DOWNLOAD ===
-      document.getElementById('downloadBtn').addEventListener('click', function () {
-        const element = document.getElementById('dashboard-content');
+      if (!points.length) return;
+
+      // LINE (smooth waveform)
+      datasets.push({
+        label: category,
+        type: 'line',
+        data: points,
+        borderColor: border,
+        backgroundColor: bg,
+        borderWidth: 2,
+        tension: 0.25,        // ✅ smoother
+        spanGaps: true,       // ✅ no broken lines
+        fill: false,
+        pointRadius: 3
+      });
+
+      // SCATTER POINTS
+      datasets.push({
+        label: `${category} points`,
+        type: 'scatter',
+        data: points,
+        backgroundColor: border,
+        pointRadius: 3,
+        showLine: false
+      });
+    });
+
+    new Chart(waveformCtx, {
+      type: 'scatter',
+      data: { datasets },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          title: {
+            display: true,
+            text: 'Failure Rate vs Production Plan Analysis',
+            font: { size: 18, weight: 'bold' }
+          },
+          tooltip: {
+            callbacks: {
+              label: ctx => {
+                const d = ctx.raw;
+                return [
+                  `Part: ${d.category}`,
+                  `Plan: ${d.x}`,
+                  `Failure: ${d.failure}`,
+                  `Failure Rate: ${d.y}%`,
+                  `Actual: ${d.actual}`
+                ];
+              }
+            }
+          },
+          legend: {
+            labels: {
+              filter: item => !item.text.includes('points')
+            }
+          }
+        },
+        scales: {
+          x: {
+            beginAtZero: true,
+            title: { display: true, text: 'Production Plan Quantity' }
+          },
+          y: {
+            beginAtZero: true,
+            max: 100,
+            title: { display: true, text: 'Failure Rate (%)' },
+            ticks: { callback: v => v + '%' }
+          }
+        }
+      }
+    });
+
+    // ==============================
+    // GLOBAL SEARCH
+    // ==============================
+    const searchInput = document.getElementById('globalSearch');
+    if (searchInput) {
+      const rows = document.querySelectorAll(
+        '#regBody tr, #clfBody tr, #failureRateTable tbody tr, #next7daysTable tbody tr'
+      );
+      searchInput.addEventListener('input', function () {
+        const q = this.value.toLowerCase();
+        rows.forEach(r => {
+          r.style.display = r.textContent.toLowerCase().includes(q) ? '' : 'none';
+        });
+      });
+    }
+
+    // ==============================
+    // PDF DOWNLOAD
+    // ==============================
+    const downloadBtn = document.getElementById('downloadBtn');
+    if (downloadBtn) {
+      downloadBtn.addEventListener('click', function () {
         html2pdf()
-          .from(element)
-          .set({ 
-            margin: 1, 
-            filename: 'AI_Dashboard_Report.pdf', 
-            html2canvas: { scale: 2 }, 
+          .from(document.getElementById('dashboard-content'))
+          .set({
+            margin: 1,
+            filename: 'AI_Dashboard_Report.pdf',
+            html2canvas: { scale: 2 },
             jsPDF: { unit: 'in', format: 'a3', orientation: 'portrait' }
           })
           .save();
       });
+    }
 
-      // === EXPORT TO EXCEL ===
-      function exportTableToExcel(tableId, filename) {
-        const table = document.getElementById(tableId);
-        const wb = XLSX.utils.table_to_book(table, { sheet: "Sheet1" });
-        XLSX.writeFile(wb, filename);
-      }
+    // ==============================
+    // EXCEL EXPORT
+    // ==============================
+    window.exportTableToExcel = function (tableId, filename) {
+      const table = document.getElementById(tableId);
+      if (!table) return;
+      const wb = XLSX.utils.table_to_book(table, { sheet: "Sheet1" });
+      XLSX.writeFile(wb, filename);
+    };
 
-      window.exportTableToExcel = exportTableToExcel;
+  });
+</script>
 
-      function exportPlanActualDataToExcel() {
-        const data = [];
-        const categories = Object.keys({{ failure_trends|safe }});
-        categories.forEach(cat => {
-          const trend = {{ failure_trends|safe }}[cat];
-          trend.plan_values.forEach((plan, i) => {
-            data.push({
-              Part: cat,
-              Date: trend.dates[i],
-              Plan: plan,
-              Actual: trend.actual_values[i],
-              Failure: trend.failure_values[i],
-              'Failure Rate (%)': trend.failure_rates[i]
-            });
-          });
-        });
-        const ws = XLSX.utils.json_to_sheet(data);
-        const wb = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(wb, ws, "Failure Trends");
-        XLSX.writeFile(wb, "FailureTrends.xlsx");
-      }
-
-      window.exportPlanActualDataToExcel = exportPlanActualDataToExcel;
-
-    });
-  </script>
 
 </body>
 </html>
