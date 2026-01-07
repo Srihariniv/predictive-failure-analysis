@@ -1126,9 +1126,10 @@ def future_predictions(request):
     results = train_models(df, df_raw)
     predictions = results.get("next_month_30_predictions", [])
 
+    # ✅ FIX: DO NOT REDIRECT TO DASHBOARD
     if not predictions:
-        messages.error(request, "No future predictions generated")
-        return redirect('dashboard')
+        messages.warning(request, "No future predictions generated")
+        predictions = []
 
     # Normalize category names
     for p in predictions:
@@ -1178,7 +1179,7 @@ def future_predictions(request):
         for p in predictions
     )
 
-    # ---------------- REASON TABLE (FIXED) ----------------
+    # ---------------- REASON TABLE ----------------
     reason_table = {}
 
     for cat in categories:
@@ -1204,7 +1205,7 @@ def future_predictions(request):
             reason_table[cat].append({
                 "reason": reason,
                 "count": count,
-                "future_actual": solved_actual   # ✅ THIS FIXES YOUR UI
+                "future_actual": solved_actual
             })
 
     # ---------------- MONTH NAME ----------------
