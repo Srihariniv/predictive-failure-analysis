@@ -281,8 +281,9 @@ def future_box_score(request):
     import os
     import random
     from django.conf import settings
-    from django.shortcuts import render, redirect
+    from django.shortcuts import render
     from django.contrib import messages
+    from django.core.cache import cache
 
     # 🔑 Detect Render environment
     IS_RENDER = os.environ.get("RENDER") == "true"
@@ -290,23 +291,30 @@ def future_box_score(request):
     upload_dir = os.path.join(settings.MEDIA_ROOT, 'uploads')
     os.makedirs(upload_dir, exist_ok=True)
 
-    # ============================================================
-    # ✅ SAFE FILE ACCESS (FIXES 502)
-    # ============================================================
+    # -------------------------------------------------
+    # SAFE FILE ACCESS (prevents 502)
+    # -------------------------------------------------
     try:
         latest_file = get_latest_file(upload_dir)
     except Exception:
         latest_file = None
 
     if not latest_file:
-        messages.error(request, "No Excel uploaded")
-        return redirect("upload_file")
+        # ❌ NO redirect (Render-safe)
+        return render(
+            request,
+            "analysi/future_box_score.html",
+            {
+                "future_day_tables": [],
+                "weekly_summary": [],
+            }
+        )
 
     file_path = os.path.join(upload_dir, latest_file)
 
-    # ============================================================
-    # 🔴 HEAVY PART (LOCAL ONLY – LAZY IMPORTS)
-    # ============================================================
+    # -------------------------------------------------
+    # LOCAL: heavy work allowed
+    # -------------------------------------------------
     if not IS_RENDER:
         import pandas as pd
         from .ml.extract import extract_data
@@ -320,17 +328,16 @@ def future_box_score(request):
 
         results = train_models(df, df_raw)
 
-    # ============================================================
-    # 🟢 RENDER SAFE PART (NO ML, NO PANDAS)
-    # ============================================================
+    # -------------------------------------------------
+    # RENDER: NO redirect if cache is empty
+    # -------------------------------------------------
     else:
-        from django.core.cache import cache
-        results = cache.get("ML_RESULTS")
+        results = cache.get("ML_RESULTS") or {}
         df_raw = None
 
-    # ============================================================
-    # ⬇️ ORIGINAL LOGIC (100% UNCHANGED)
-    # ============================================================
+    # -------------------------------------------------
+    # ORIGINAL LOGIC (UNCHANGED)
+    # -------------------------------------------------
     def safe_float(x):
         try:
             x = str(x).strip()
@@ -353,7 +360,6 @@ def future_box_score(request):
     value_start_col = 2
 
     if df_raw is not None and (not hasattr(df_raw, "empty") or not df_raw.empty):
-
         header_rows = df_raw[
             df_raw.apply(
                 lambda r: (
