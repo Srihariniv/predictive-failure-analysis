@@ -284,9 +284,6 @@ def future_box_score(request):
     from django.shortcuts import render, redirect
     from django.contrib import messages
 
-    from .ml.extract import extract_data
-    from .ml.predict import train_models
-
     # 🔑 Detect Render environment
     IS_RENDER = os.environ.get("RENDER") == "true"
 
@@ -301,10 +298,12 @@ def future_box_score(request):
     file_path = os.path.join(upload_dir, latest_file)
 
     # ============================================================
-    # 🔴 HEAVY PART (LOCAL ONLY)
+    # 🔴 HEAVY PART (LOCAL ONLY – LAZY IMPORTS)
     # ============================================================
     if not IS_RENDER:
-        import pandas as pd  # pandas ONLY locally
+        import pandas as pd
+        from .ml.extract import extract_data
+        from .ml.predict import train_models
 
         df = extract_data(file_path)
         try:
@@ -315,7 +314,7 @@ def future_box_score(request):
         results = train_models(df, df_raw)
 
     # ============================================================
-    # 🟢 RENDER SAFE PART
+    # 🟢 RENDER SAFE PART (NO ML, NO PANDAS IMPORT)
     # ============================================================
     else:
         from django.core.cache import cache
@@ -325,8 +324,7 @@ def future_box_score(request):
             messages.error(request, "Run Algorithm page first")
             return redirect("dashboard")
 
-        # No pandas, no dataframe on Render
-        df_raw = None
+        df_raw = None  # IMPORTANT: no pandas object on Render
 
     # ============================================================
     # ⬇️ ORIGINAL LOGIC (UNCHANGED)
@@ -352,7 +350,7 @@ def future_box_score(request):
 
     value_start_col = 2
 
-    # ✅ SAFE CHECK (works for DataFrame / None)
+    # ✅ SAFE CHECK (DataFrame / None compatible)
     if df_raw is not None and (not hasattr(df_raw, "empty") or not df_raw.empty):
 
         header_rows = df_raw[
