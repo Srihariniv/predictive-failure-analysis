@@ -278,132 +278,22 @@ def profit_analysis(request):
 
 # ---------------- FUTURE BOX SCORE PAGE ----------------
 def future_box_score(request):
-    import os
     import random
-    from django.conf import settings
-    from django.shortcuts import render, redirect
-    from django.contrib import messages
-    from django.core.cache import cache
+    from .ml.ml_cache import load_ml_results
 
-    IS_RENDER = os.environ.get("RENDER") == "true"
+    results = load_ml_results()
+    if not results:
+        messages.error(request, "ML results not found.")
+        return redirect("algorithms")
 
-    upload_dir = os.path.join(settings.MEDIA_ROOT, 'uploads')
-    os.makedirs(upload_dir, exist_ok=True)
+    base_predictions = results.get("future_box_base_predictions", [])
 
-    # ---------------- SAFE FILE ACCESS ----------------
-    try:
-        latest_file = get_latest_file(upload_dir)
-    except Exception:
-        latest_file = None
-
-    if not latest_file:
-        return render(
-            request,
-            "analysi/future_box_score.html",
-            {
-                "future_day_tables": [],
-                "weekly_summary": [],
-            }
-        )
-
-    file_path = os.path.join(upload_dir, latest_file)
-
-    # ---------------- LOCAL (Excel allowed) ----------------
-    if not IS_RENDER:
-        import pandas as pd
-        from .ml.extract import extract_data
-        from .ml.predict import train_models
-
-        df = extract_data(file_path)
-        try:
-            df_raw = pd.read_excel(file_path, header=None)
-        except:
-            df_raw = None
-
-        results = train_models(df, df_raw)
-        base_predictions = []   # will be built below
-
-    # ---------------- RENDER (NO Excel) ----------------
-    else:
-        df_raw = None
-        base_predictions = cache.get("FUTURE_BOX_BASE_PREDICTIONS", [])
-
-    # ---------------- ORIGINAL LOGIC ----------------
-    def safe_float(x):
-        try:
-            x = str(x).strip()
-            if x in ["", "-", "--", "nan", "None"]:
-                return 0
-            return float(x)
-        except:
-            return 0
-
-    ALLOWED_CATEGORIES = [
-        "FEED PUMP",
-        "WATER PUMP",
-        "PCN",
-        "COOLANT ELBOW & COVERS",
-        "PULLEY",
-    ]
-
-    value_start_col = 2
-
-    # Build base_predictions ONLY locally
-    if not IS_RENDER and df_raw is not None and not df_raw.empty:
-        header_rows = df_raw[
-            df_raw.apply(
-                lambda r: (
-                    "FEED PUMP" in " ".join(map(str, r)).upper()
-                    and "WATER PUMP" in " ".join(map(str, r)).upper()
-                ),
-                axis=1
-            )
-        ]
-
-        for header_idx in header_rows.index:
-            header = df_raw.iloc[header_idx]
-
-            headers = []
-            header_col_indexes = []
-
-            for col_idx in range(value_start_col, df_raw.shape[1]):
-                normalized = normalize_category_header(header[col_idx])
-                if normalized and normalized in ALLOWED_CATEGORIES:
-                    headers.append(normalized)
-                    header_col_indexes.append(col_idx)
-
-            metric_map = {}
-
-            for metric in ["Productive", "REVENUE", "Material Cost", "Conversion Cost"]:
-                match = df_raw.iloc[header_idx:][
-                    df_raw.iloc[header_idx:].apply(
-                        lambda r: metric.upper() in " ".join(map(str, r)).upper(),
-                        axis=1
-                    )
-                ]
-
-                values = []
-                for col_idx in header_col_indexes:
-                    val = ""
-                    if not match.empty:
-                        val = match.iloc[0, col_idx]
-                    values.append(val)
-
-                metric_map[metric] = values
-
-            for idx, category in enumerate(headers):
-                base_predictions.append({
-                    "category": category,
-                    "current_productive": safe_float(metric_map["Productive"][idx]),
-                    "current_revenue": safe_float(metric_map["REVENUE"][idx]),
-                    "material": safe_float(metric_map["Material Cost"][idx]),
-                    "conversion": safe_float(metric_map["Conversion Cost"][idx]),
-                })
-
-    # ---------------- FUTURE TABLES ----------------
-    future_day_tables = []
-    categories_per_day = 5
-    day_number = 1
+    if not base_predictions:
+        messages.error(request, "Future profit base data missing.")
+        return render(request, "analysi/future_box_score.html", {
+            "future_day_tables": [],
+            "weekly_summary": [],
+        })
 
     NEGATIVE_PROFIT = {
         "FEED PUMP": -18573,
@@ -413,72 +303,53 @@ def future_box_score(request):
         "PCN": -9616,
     }
 
-    for start in range(0, len(base_predictions), categories_per_day):
+    future_day_tables = []
+    daily_totals = []
+    day_number = 1
+
+    for i in range(0, len(base_predictions), 5):
         rows = []
-        chunk = base_predictions[start:start + categories_per_day]
+        for base in base_predictions[i:i + 5]:
+            pf = random.uniform(1.05, 1.15)
+            cf = random.uniform(0.95, 1.08)
 
-        for base in chunk:
-            prod_factor = random.uniform(1.05, 1.15)
-            cost_factor = random.uniform(0.95, 1.08)
+            fr = int(base["current_revenue"] * pf)
+            fm = int(base["material"] * cf)
+            fc = int(base["conversion"] * cf)
 
-            f_productive = int(base["current_productive"] * prod_factor)
-            f_revenue = int(base["current_revenue"] * prod_factor)
-            f_material = int(base["material"] * cost_factor)
-            f_conversion = int(base["conversion"] * cost_factor)
-
-            f_profit = (
-                NEGATIVE_PROFIT.get(base["category"], -abs(f_conversion))
-                if base["current_revenue"] == 0
-                else f_revenue - (f_material + f_conversion)
-            )
+            profit = fr - (fm + fc) if base["current_revenue"] else NEGATIVE_PROFIT.get(base["category"], -fc)
 
             rows.append({
                 "category": base["category"],
-                "future_productive": f_productive,
-                "future_revenue": f_revenue,
-                "future_profit": f_profit,
-                "current_productive": int(base["current_productive"]),
-                "current_revenue": int(base["current_revenue"]),
-                "material": int(base["material"]),
-                "conversion": int(base["conversion"]),
+                "future_productive": int(base["current_productive"] * pf),
+                "future_revenue": fr,
+                "future_profit": profit,
             })
 
-        future_day_tables.append({
-            "day": f"Day {day_number}",
-            "rows": rows
+        future_day_tables.append({"day": f"Day {day_number}", "rows": rows})
+        daily_totals.append({
+            "productive": sum(r["future_productive"] for r in rows),
+            "revenue": sum(r["future_revenue"] for r in rows),
+            "profit": sum(r["future_profit"] for r in rows),
         })
-
         day_number += 1
 
-    # ---------------- WEEKLY SUMMARY ----------------
     weekly_summary = []
-    week_size = 7
-    daily_totals = []
-
-    for day_table in future_day_tables:
-        daily_totals.append({
-            "productive": sum(r["future_productive"] for r in day_table["rows"]),
-            "revenue": sum(r["future_revenue"] for r in day_table["rows"]),
-            "profit": sum(r["future_profit"] for r in day_table["rows"]),
-        })
-
-    for i in range(0, len(daily_totals), week_size):
-        week_data = daily_totals[i:i + week_size]
+    for i in range(0, len(daily_totals), 7):
+        chunk = daily_totals[i:i + 7]
         weekly_summary.append({
-            "week": f"Day {i + 1}-{i + len(week_data)}",
-            "total_productive": sum(d["productive"] for d in week_data),
-            "total_revenue": sum(d["revenue"] for d in week_data),
-            "total_profit": sum(d["profit"] for d in week_data),
+            "week": f"Day {i + 1}-{i + len(chunk)}",
+            "total_productive": sum(d["productive"] for d in chunk),
+            "total_revenue": sum(d["revenue"] for d in chunk),
+            "total_profit": sum(d["profit"] for d in chunk),
         })
 
-    return render(
-        request,
-        "analysi/future_box_score.html",
-        {
-            "future_day_tables": future_day_tables,
-            "weekly_summary": weekly_summary,
-        }
-    )
+    return render(request, "analysi/future_box_score.html", {
+        "future_day_tables": future_day_tables,
+        "weekly_summary": weekly_summary,
+    })
+
+
 
 # Helper: Validate category name
 def is_valid_category(cat):
@@ -1065,169 +936,95 @@ def get_latest_file(directory):
         return None
     files = sorted(files, key=lambda x: os.path.getmtime(os.path.join(directory, x)), reverse=True)
     return files[0]
+
+
 def future_predictions(request):
-    import os
     import json
     from collections import Counter
-    from django.shortcuts import render, redirect
-    from django.contrib import messages
-    from django.conf import settings
-    from dateutil.relativedelta import relativedelta
-    from django.core.cache import cache
+    from .ml.ml_cache import load_ml_results
 
-    IS_RENDER = os.environ.get("RENDER") == "true"
-
-    upload_dir = os.path.join(settings.MEDIA_ROOT, "uploads")
-    os.makedirs(upload_dir, exist_ok=True)
-
-    # ---------------- SAFE FILE ACCESS ----------------
-    try:
-        latest_file = get_latest_file(upload_dir)
-    except Exception:
-        latest_file = None
-
-    if not latest_file:
-        return render(
-            request,
-            "analysi/future_predictions.html",
-            {
-                "seven_day": [],
-                "thirty_day": [],
-                "month_name": "",
-                "total_investment": 0,
-                "failures_days": [],
-                "chart_datasets_json": "[]",
-                "reason_table": {},
-            }
-        )
-
-    file_path = os.path.join(upload_dir, latest_file)
-
-    # ==================================================
-    # 🔴 LOCAL: Excel + ML allowed
-    # ==================================================
-    if not IS_RENDER:
-        import pandas as pd
-        from .ml.extract import extract_data
-        from .ml.predict import train_models
-
-        df = extract_data(file_path)
-        if df is None or df.empty:
-            messages.warning(request, "No data extracted")
-            return redirect("upload_file")
-
-        try:
-            df_raw = pd.read_excel(file_path, nrows=800)
-        except:
-            df_raw = None
-
-        results = train_models(df, df_raw)
-
-    # ==================================================
-    # 🟢 RENDER: CACHE ONLY (NO ML / NO PANDAS)
-    # ==================================================
-    else:
-        results = cache.get("ML_RESULTS") or {}
-        df = None
+    results = load_ml_results()
+    if not results:
+        messages.error(request, "ML results not found. Run Algorithms once.")
+        return redirect("algorithms")
 
     predictions = results.get("next_month_30_predictions", [])
 
-    # Normalize category names
+    # 🔥 THIS WAS THE PROBLEM
+    if not predictions:
+        messages.error(request, "Future 30-day predictions not generated.")
+        return render(request, "analysi/future_predictions.html", {
+            "thirty_day": [],
+            "failures_days": [],
+            "chart_datasets_json": "[]",
+            "reason_table": {},
+            "latest_file": "",
+        })
+
     for p in predictions:
-        p["part"] = clean_category_name(p.get("part") or "")
+        p["part"] = clean_category_name(p.get("part", ""))
 
-    # ---------------- DAYS ----------------
-    all_days = sorted(
-        {p["day"] for p in predictions},
-        key=lambda x: int(x.split(" ")[1]) if isinstance(x, str) else 0
-    )
-
-    # ---------------- CHART DATA ----------------
     categories = ["FEED PUMP", "WATER PUMP", "PCN", "COOLANT ELBOW & COVERS", "PULLEY"]
+    all_days = sorted(set(p["day"] for p in predictions), key=lambda x: int(x.split(" ")[1]))
+
     chart_datasets = []
+    for cat in categories:
+        cat_preds = [p for p in predictions if p["part"] == cat]
+        data = [next((p["failure"] for p in cat_preds if p["day"] == d), 0) for d in all_days]
 
-    for category in categories:
-        cat_preds = [p for p in predictions if p["part"] == category]
-        data = []
-
-        for day in all_days:
-            day_pred = next((p for p in cat_preds if p["day"] == day), None)
-            data.append(day_pred["failure"] if day_pred else 0)
-
-        color = get_category_color(category)
+        color = get_category_color(cat)
         chart_datasets.append({
-            "label": category,
+            "label": cat,
             "data": data,
             "borderColor": color["border"],
             "backgroundColor": color["background"],
-            "borderWidth": 2,
             "fill": False,
             "tension": 0.4,
         })
 
-    # ---------------- INVESTMENT SUMMARY ----------------
-    total_investment = sum(
-        p.get("investment_recommendation", {}).get("investment_needed", 0)
-        for p in predictions
-    )
-
-    # ---------------- REASON TABLE ----------------
+    # Reason table
     reason_table = {}
+    for p in predictions:
+        cat = p.get("part")
+        reason = p.get("reason")
+        actual = p.get("predicted_actual", 0)
 
-    for cat in categories:
-        cat_preds = [p for p in predictions if p["part"] == cat]
-        if not cat_preds:
-            continue
+        if cat and reason:
+            reason_table.setdefault(cat, {})
+            reason_table[cat][reason] = reason_table[cat].get(reason, 0) + actual
 
-        total_plan = sum(p.get("plan", 0) for p in cat_preds)
-        reasons = [p.get("reason") for p in cat_preds if p.get("reason")]
-        counter = Counter(reasons)
+    reason_table = {
+        cat: [{"reason": r, "future_actual": v} for r, v in reasons.items()]
+        for cat, reasons in reason_table.items()
+    }
 
-        reason_table[cat] = []
+    return render(request, "analysi/future_predictions.html", {
+        "latest_file": results.get("latest_file", ""),
+        "thirty_day": predictions,
+        "month_name": results.get("future_month_name", ""),
+        "failures_days": all_days,
+        "chart_datasets_json": json.dumps(chart_datasets),
+        "reason_table": reason_table,
+        "seven_day": results.get("predictions", []),
+    })
 
-        for reason, count in counter.items():
-            total_failure = sum(
-                p.get("failure", 0)
-                for p in cat_preds
-                if p.get("reason") == reason
-            )
-            reason_table[cat].append({
-                "reason": reason,
-                "count": count,
-                "future_actual": max(total_plan - total_failure, 0),
-            })
-
-    # ---------------- MONTH NAME ----------------
-    month_name = ""
-    if not IS_RENDER and df is not None and "date" in df:
-        last_date = df["date"].max()
-        month_name = (last_date + relativedelta(months=1)).strftime("%B %Y")
-
-    return render(
-        request,
-        "analysi/future_predictions.html",
-        {
-            "seven_day": results.get("predictions", []),
-            "thirty_day": predictions,
-            "latest_file": latest_file,
-            "month_name": month_name,
-            "total_investment": round(total_investment, 2),
-            "failures_days": all_days,
-            "chart_datasets_json": json.dumps(chart_datasets),
-            "reason_table": reason_table,
-        }
-    )
-
-
+# Helper function for colors (add this if not in your views.py)
 def get_category_color(category):
     colors = {
-        'FEED PUMP': {'border': 'rgb(255, 99, 132)', 'background': 'rgba(255, 99, 132, 0.2)'},
-        'WATER PUMP': {'border': 'rgb(54, 162, 235)', 'background': 'rgba(54, 162, 235, 0.2)'},
-        'PCN': {'border': 'rgb(255, 206, 86)', 'background': 'rgba(255, 206, 86, 0.2)'},
-        'COOLANT ELBOW & COVERS': {'border': 'rgb(75, 192, 192)', 'background': 'rgba(75, 192, 192, 0.2)'},
-        'PULLEY': {'border': 'rgb(153, 102, 255)', 'background': 'rgba(153, 102, 255, 0.2)'}
+        "FEED PUMP": {"border": "rgb(220, 38, 38)", "background": "rgba(220, 38, 38, 0.1)"},
+        "WATER PUMP": {"border": "rgb(37, 99, 235)", "background": "rgba(37, 99, 235, 0.1)"},
+        "PCN": {"border": "rgb(5, 150, 105)", "background": "rgba(5, 150, 105, 0.1)"},
+        "COOLANT ELBOW & COVERS": {"border": "rgb(168, 85, 247)", "background": "rgba(168, 85, 247, 0.1)"},
+        "PULLEY": {"border": "rgb(245, 158, 11)", "background": "rgba(245, 158, 11, 0.1)"},
     }
-    return colors.get(category, {'border': 'rgb(201, 203, 207)', 'background': 'rgba(201, 203, 207, 0.2)'})
+    return colors.get(category, {"border": "rgb(75, 85, 99)", "background": "rgba(75, 85, 99, 0.1)"})
+
+# Helper function to clean category names (add this if not in your views.py)
+def clean_category_name(name):
+    # Remove any unwanted characters and standardize
+    name = name.strip().upper()
+    # Add your cleaning logic here if needed
+    return name
 # ========================================
 # FINANCIAL DASHBOARD
 # ========================================
