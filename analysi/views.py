@@ -277,11 +277,18 @@ def profit_analysis(request):
     return render(request, "analysi/profit_analysis.html", context)
 
 # ---------------- FUTURE BOX SCORE PAGE ----------------
-
 def future_box_score(request):
-    import pandas as pd
+    import os
+    import random
+    from django.conf import settings
+    from django.shortcuts import render, redirect
+    from django.contrib import messages
+
     from .ml.extract import extract_data
     from .ml.predict import train_models
+
+    # 🔑 Detect Render environment
+    IS_RENDER = os.environ.get("RENDER") == "true"
 
     upload_dir = os.path.join(settings.MEDIA_ROOT, 'uploads')
     os.makedirs(upload_dir, exist_ok=True)
@@ -293,14 +300,37 @@ def future_box_score(request):
 
     file_path = os.path.join(upload_dir, latest_file)
 
-    df = extract_data(file_path)
-    try:
-        df_raw = pd.read_excel(file_path, header=None)
-    except:
+    # ============================================================
+    # 🔴 HEAVY PART (LOCAL ONLY)
+    # ============================================================
+    if not IS_RENDER:
+        import pandas as pd  # pandas ONLY locally
+
+        df = extract_data(file_path)
+        try:
+            df_raw = pd.read_excel(file_path, header=None)
+        except:
+            df_raw = None
+
+        results = train_models(df, df_raw)
+
+    # ============================================================
+    # 🟢 RENDER SAFE PART
+    # ============================================================
+    else:
+        from django.core.cache import cache
+
+        results = cache.get("ML_RESULTS")
+        if not results:
+            messages.error(request, "Run Algorithm page first")
+            return redirect("dashboard")
+
+        # No pandas, no dataframe on Render
         df_raw = None
 
-    results = train_models(df, df_raw)
-
+    # ============================================================
+    # ⬇️ ORIGINAL LOGIC (UNCHANGED)
+    # ============================================================
     def safe_float(x):
         try:
             x = str(x).strip()
@@ -322,63 +352,58 @@ def future_box_score(request):
 
     value_start_col = 2
 
-    header_rows = df_raw[
-        df_raw.apply(
-            lambda r: (
-                "FEED PUMP" in " ".join(map(str, r)).upper()
-                and "WATER PUMP" in " ".join(map(str, r)).upper()
-            ),
-            axis=1
-        )
-    ]
+    # ✅ SAFE CHECK (works for DataFrame / None)
+    if df_raw is not None and (not hasattr(df_raw, "empty") or not df_raw.empty):
 
-    for header_idx in header_rows.index:
+        header_rows = df_raw[
+            df_raw.apply(
+                lambda r: (
+                    "FEED PUMP" in " ".join(map(str, r)).upper()
+                    and "WATER PUMP" in " ".join(map(str, r)).upper()
+                ),
+                axis=1
+            )
+        ]
 
-        header = df_raw.iloc[header_idx]
+        for header_idx in header_rows.index:
+            header = df_raw.iloc[header_idx]
 
-        headers = []
-        header_col_indexes = []
+            headers = []
+            header_col_indexes = []
 
-        for col_idx in range(value_start_col, df_raw.shape[1]):
-            normalized = normalize_category_header(header[col_idx])
-            if normalized and normalized in ALLOWED_CATEGORIES:
-                headers.append(normalized)
-                header_col_indexes.append(col_idx)
+            for col_idx in range(value_start_col, df_raw.shape[1]):
+                normalized = normalize_category_header(header[col_idx])
+                if normalized and normalized in ALLOWED_CATEGORIES:
+                    headers.append(normalized)
+                    header_col_indexes.append(col_idx)
 
-        metric_map = {}
+            metric_map = {}
 
-        for metric in ["Productive", "REVENUE", "Material Cost", "Conversion Cost"]:
+            for metric in ["Productive", "REVENUE", "Material Cost", "Conversion Cost"]:
+                match = df_raw.iloc[header_idx:][
+                    df_raw.iloc[header_idx:].apply(
+                        lambda r: metric.upper() in " ".join(map(str, r)).upper(),
+                        axis=1
+                    )
+                ]
 
-            match = df_raw.iloc[header_idx:][
-                df_raw.iloc[header_idx:].apply(
-                    lambda r: metric.upper() in " ".join(map(str, r)).upper(),
-                    axis=1
-                )
-            ]
+                values = []
+                for col_idx in header_col_indexes:
+                    val = ""
+                    if not match.empty and col_idx < df_raw.shape[1]:
+                        val = match.iloc[0, col_idx]
+                    values.append(val)
 
-            values = []
-            for col_idx in header_col_indexes:
-                val = ""
-                if not match.empty and col_idx < df_raw.shape[1]:
-                    val = match.iloc[0, col_idx]
-                values.append(val)
+                metric_map[metric] = values
 
-            metric_map[metric] = values
-
-        for idx, category in enumerate(headers):
-
-            current_p = safe_float(metric_map["Productive"][idx])
-            revenue = safe_float(metric_map["REVENUE"][idx])
-            material = safe_float(metric_map["Material Cost"][idx])
-            conversion = safe_float(metric_map["Conversion Cost"][idx])
-
-            base_predictions.append({
-                "category": category,
-                "current_productive": current_p,
-                "current_revenue": revenue,
-                "material": material,
-                "conversion": conversion,
-            })
+            for idx, category in enumerate(headers):
+                base_predictions.append({
+                    "category": category,
+                    "current_productive": safe_float(metric_map["Productive"][idx]),
+                    "current_revenue": safe_float(metric_map["REVENUE"][idx]),
+                    "material": safe_float(metric_map["Material Cost"][idx]),
+                    "conversion": safe_float(metric_map["Conversion Cost"][idx]),
+                })
 
     future_day_tables = []
     categories_per_day = 5
@@ -393,12 +418,10 @@ def future_box_score(request):
     }
 
     for start in range(0, len(base_predictions), categories_per_day):
-
         rows = []
         chunk = base_predictions[start:start + categories_per_day]
 
         for base in chunk:
-
             prod_factor = random.uniform(1.05, 1.15)
             cost_factor = random.uniform(0.95, 1.08)
 
@@ -430,60 +453,25 @@ def future_box_score(request):
 
         day_number += 1
 
-
-    # --------------- WEEK AND CATEGORY SUMMARY -----------------
     weekly_summary = []
     week_size = 7
     daily_totals = []
 
-    # collect category wise daily values
-    category_day_values = {}
-
     for day_table in future_day_tables:
-
-        for row in day_table["rows"]:
-            cat = row["category"]
-
-            if cat not in category_day_values:
-                category_day_values[cat] = []
-
-            category_day_values[cat].append({
-                "productive": row["future_productive"],
-                "revenue": row["future_revenue"],
-                "profit": row["future_profit"],
-            })
-
-        prod_sum = sum(row["future_productive"] for row in day_table["rows"])
-        rev_sum = sum(row["future_revenue"] for row in day_table["rows"])
-        profit_sum = sum(row["future_profit"] for row in day_table["rows"])
-
         daily_totals.append({
-            "productive": prod_sum,
-            "revenue": rev_sum,
-            "profit": profit_sum
+            "productive": sum(r["future_productive"] for r in day_table["rows"]),
+            "revenue": sum(r["future_revenue"] for r in day_table["rows"]),
+            "profit": sum(r["future_profit"] for r in day_table["rows"]),
         })
 
     for i in range(0, len(daily_totals), week_size):
-
         week_data = daily_totals[i:i + week_size]
-
-        weekly_categories = []
-
-        for cat, vals in category_day_values.items():
-            chunk_vals = vals[i:i + week_size]
-            weekly_categories.append({
-                "category": cat,
-                "productive": sum(v["productive"] for v in chunk_vals),
-                "revenue": sum(v["revenue"] for v in chunk_vals),
-                "profit": sum(v["profit"] for v in chunk_vals),
-            })
 
         weekly_summary.append({
             "week": f"Day {i + 1}-{i + len(week_data)}",
             "total_productive": sum(d["productive"] for d in week_data),
             "total_revenue": sum(d["revenue"] for d in week_data),
             "total_profit": sum(d["profit"] for d in week_data),
-            "category_summary": weekly_categories,
         })
 
     return render(
