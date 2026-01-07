@@ -128,7 +128,6 @@ def profit_analysis(request):
     from django.shortcuts import render, redirect
     from django.contrib import messages
 
-    from .ml.extract import extract_data
     from .ml.ml_cache import load_ml_results   # ✅ USE CACHE
 
     upload_dir = os.path.join(settings.MEDIA_ROOT, 'uploads')
@@ -141,14 +140,10 @@ def profit_analysis(request):
 
     file_path = os.path.join(upload_dir, latest_file)
 
-    # ---------------- DATA (NO ML HERE) ----------------
-    df = extract_data(file_path)
-    if df is None or df.empty:
-        messages.error(request, "No data extracted!")
-        return redirect('upload_file')
+    # ❌ REMOVED extract_data() → saves memory
 
     try:
-        df_raw = pd.read_excel(file_path, header=None, nrows=800)  # ✅ MEMORY SAFE
+        df_raw = pd.read_excel(file_path, header=None, nrows=800)
     except Exception:
         df_raw = None
 
