@@ -282,25 +282,20 @@ def future_box_score(request):
     import random
     from django.conf import settings
     from django.shortcuts import render
-    from django.contrib import messages
     from django.core.cache import cache
 
-    # 🔑 Detect Render environment
     IS_RENDER = os.environ.get("RENDER") == "true"
 
     upload_dir = os.path.join(settings.MEDIA_ROOT, 'uploads')
     os.makedirs(upload_dir, exist_ok=True)
 
-    # -------------------------------------------------
-    # SAFE FILE ACCESS (prevents 502)
-    # -------------------------------------------------
+    # ---------------- SAFE FILE CHECK ----------------
     try:
         latest_file = get_latest_file(upload_dir)
     except Exception:
         latest_file = None
 
     if not latest_file:
-        # ❌ NO redirect (Render-safe)
         return render(
             request,
             "analysi/future_box_score.html",
@@ -310,106 +305,28 @@ def future_box_score(request):
             }
         )
 
-    file_path = os.path.join(upload_dir, latest_file)
-
-    # -------------------------------------------------
-    # LOCAL: heavy work allowed
-    # -------------------------------------------------
+    # ---------------- LOCAL ----------------
     if not IS_RENDER:
         import pandas as pd
         from .ml.extract import extract_data
         from .ml.predict import train_models
 
-        df = extract_data(file_path)
+        df = extract_data(os.path.join(upload_dir, latest_file))
         try:
-            df_raw = pd.read_excel(file_path, header=None)
+            df_raw = pd.read_excel(os.path.join(upload_dir, latest_file), header=None)
         except:
             df_raw = None
 
         results = train_models(df, df_raw)
+        base_predictions = []  # built below
 
-    # -------------------------------------------------
-    # RENDER: NO redirect if cache is empty
-    # -------------------------------------------------
+    # ---------------- RENDER ----------------
     else:
         results = cache.get("ML_RESULTS") or {}
+        base_predictions = cache.get("FUTURE_BOX_BASE_PREDICTIONS", [])
         df_raw = None
 
-    # -------------------------------------------------
-    # ORIGINAL LOGIC (UNCHANGED)
-    # -------------------------------------------------
-    def safe_float(x):
-        try:
-            x = str(x).strip()
-            if x in ["", "-", "--", "nan", "None"]:
-                return 0
-            return float(x)
-        except:
-            return 0
-
-    base_predictions = []
-
-    ALLOWED_CATEGORIES = [
-        "FEED PUMP",
-        "WATER PUMP",
-        "PCN",
-        "COOLANT ELBOW & COVERS",
-        "PULLEY",
-    ]
-
-    value_start_col = 2
-
-    if df_raw is not None and (not hasattr(df_raw, "empty") or not df_raw.empty):
-        header_rows = df_raw[
-            df_raw.apply(
-                lambda r: (
-                    "FEED PUMP" in " ".join(map(str, r)).upper()
-                    and "WATER PUMP" in " ".join(map(str, r)).upper()
-                ),
-                axis=1
-            )
-        ]
-
-        for header_idx in header_rows.index:
-            header = df_raw.iloc[header_idx]
-
-            headers = []
-            header_col_indexes = []
-
-            for col_idx in range(value_start_col, df_raw.shape[1]):
-                normalized = normalize_category_header(header[col_idx])
-                if normalized and normalized in ALLOWED_CATEGORIES:
-                    headers.append(normalized)
-                    header_col_indexes.append(col_idx)
-
-            metric_map = {}
-
-            for metric in ["Productive", "REVENUE", "Material Cost", "Conversion Cost"]:
-                match = df_raw.iloc[header_idx:][
-                    df_raw.iloc[header_idx:].apply(
-                        lambda r: metric.upper() in " ".join(map(str, r)).upper(),
-                        axis=1
-                    )
-                ]
-
-                values = []
-                for col_idx in header_col_indexes:
-                    val = ""
-                    if not match.empty and col_idx < df_raw.shape[1]:
-                        val = match.iloc[0, col_idx]
-                    values.append(val)
-
-                metric_map[metric] = values
-
-            for idx, category in enumerate(headers):
-                base_predictions.append({
-                    "category": category,
-                    "current_productive": safe_float(metric_map["Productive"][idx]),
-                    "current_revenue": safe_float(metric_map["REVENUE"][idx]),
-                    "material": safe_float(metric_map["Material Cost"][idx]),
-                    "conversion": safe_float(metric_map["Conversion Cost"][idx]),
-                })
-
+    # ---------------- ORIGINAL LOGIC ----------------
     future_day_tables = []
     categories_per_day = 5
     day_number = 1
@@ -458,6 +375,7 @@ def future_box_score(request):
 
         day_number += 1
 
+    # ---------------- WEEKLY SUMMARY ----------------
     weekly_summary = []
     week_size = 7
     daily_totals = []
@@ -471,7 +389,6 @@ def future_box_score(request):
 
     for i in range(0, len(daily_totals), week_size):
         week_data = daily_totals[i:i + week_size]
-
         weekly_summary.append({
             "week": f"Day {i + 1}-{i + len(week_data)}",
             "total_productive": sum(d["productive"] for d in week_data),
