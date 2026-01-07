@@ -1065,96 +1065,109 @@ def get_latest_file(directory):
         return None
     files = sorted(files, key=lambda x: os.path.getmtime(os.path.join(directory, x)), reverse=True)
     return files[0]
-
 def future_predictions(request):
     import os
     import json
-    import pandas as pd
     from collections import Counter
     from django.shortcuts import render, redirect
     from django.contrib import messages
     from django.conf import settings
     from dateutil.relativedelta import relativedelta
+    from django.core.cache import cache
 
-    from .ml.extract import extract_data
-    from .ml.predict import train_models
+    IS_RENDER = os.environ.get("RENDER") == "true"
 
-    upload_dir = os.path.join(settings.MEDIA_ROOT, 'uploads')
+    upload_dir = os.path.join(settings.MEDIA_ROOT, "uploads")
     os.makedirs(upload_dir, exist_ok=True)
 
-    latest_file = get_latest_file(upload_dir)
+    # ---------------- SAFE FILE ACCESS ----------------
+    try:
+        latest_file = get_latest_file(upload_dir)
+    except Exception:
+        latest_file = None
+
     if not latest_file:
-        messages.error(request, "No file uploaded!")
-        return redirect('upload_file')
+        return render(
+            request,
+            "analysi/future_predictions.html",
+            {
+                "seven_day": [],
+                "thirty_day": [],
+                "month_name": "",
+                "total_investment": 0,
+                "failures_days": [],
+                "chart_datasets_json": "[]",
+                "reason_table": {},
+            }
+        )
 
     file_path = os.path.join(upload_dir, latest_file)
 
-    # ---------------- DATA ----------------
-    df = extract_data(file_path)
-    if df is None or df.empty:
-        messages.error(request, "No data extracted!")
-        return redirect('upload_file')
+    # ==================================================
+    # 🔴 LOCAL: Excel + ML allowed
+    # ==================================================
+    if not IS_RENDER:
+        import pandas as pd
+        from .ml.extract import extract_data
+        from .ml.predict import train_models
 
-    try:
-        df_raw = pd.read_excel(file_path, nrows=800)
-    except Exception as e:
-        print("Excel read error:", e)
-        df_raw = None
+        df = extract_data(file_path)
+        if df is None or df.empty:
+            messages.warning(request, "No data extracted")
+            return redirect("upload_file")
 
-    # ---------------- ML ----------------
-    results = train_models(df, df_raw)
+        try:
+            df_raw = pd.read_excel(file_path, nrows=800)
+        except:
+            df_raw = None
+
+        results = train_models(df, df_raw)
+
+    # ==================================================
+    # 🟢 RENDER: CACHE ONLY (NO ML / NO PANDAS)
+    # ==================================================
+    else:
+        results = cache.get("ML_RESULTS") or {}
+        df = None
+
     predictions = results.get("next_month_30_predictions", [])
-
-    # ✅ FIX: DO NOT REDIRECT TO DASHBOARD
-    if not predictions:
-        messages.warning(request, "No future predictions generated")
-        predictions = []
 
     # Normalize category names
     for p in predictions:
-        p['part'] = clean_category_name(p.get('part') or '')
+        p["part"] = clean_category_name(p.get("part") or "")
 
     # ---------------- DAYS ----------------
     all_days = sorted(
-        set(p['day'] for p in predictions),
-        key=lambda x: int(x.split(' ')[1])
+        {p["day"] for p in predictions},
+        key=lambda x: int(x.split(" ")[1]) if isinstance(x, str) else 0
     )
 
     # ---------------- CHART DATA ----------------
-    categories = ['FEED PUMP', 'WATER PUMP', 'PCN', 'COOLANT ELBOW & COVERS', 'PULLEY']
+    categories = ["FEED PUMP", "WATER PUMP", "PCN", "COOLANT ELBOW & COVERS", "PULLEY"]
     chart_datasets = []
 
     for category in categories:
-        cat_preds = [p for p in predictions if p['part'] == category]
+        cat_preds = [p for p in predictions if p["part"] == category]
         data = []
 
         for day in all_days:
-            day_pred = next((p for p in cat_preds if p['day'] == day), None)
-            data.append(day_pred['failure'] if day_pred else 0)
+            day_pred = next((p for p in cat_preds if p["day"] == day), None)
+            data.append(day_pred["failure"] if day_pred else 0)
 
         color = get_category_color(category)
         chart_datasets.append({
             "label": category,
             "data": data,
-            "borderColor": color['border'],
-            "backgroundColor": color['background'],
+            "borderColor": color["border"],
+            "backgroundColor": color["background"],
             "borderWidth": 2,
             "fill": False,
-            "tension": 0.4
+            "tension": 0.4,
         })
-
-    # ---------------- FILTERS ----------------
-    part_q = request.GET.get('part', '').lower()
-    risk_q = request.GET.get('risk', '').upper()
-
-    if part_q:
-        predictions = [p for p in predictions if part_q in p['part'].lower()]
-    if risk_q:
-        predictions = [p for p in predictions if p['risk'] == risk_q]
 
     # ---------------- INVESTMENT SUMMARY ----------------
     total_investment = sum(
-        p.get('investment_recommendation', {}).get('investment_needed', 0)
+        p.get("investment_recommendation", {}).get("investment_needed", 0)
         for p in predictions
     )
 
@@ -1162,49 +1175,48 @@ def future_predictions(request):
     reason_table = {}
 
     for cat in categories:
-        cat_preds = [p for p in predictions if p['part'] == cat]
+        cat_preds = [p for p in predictions if p["part"] == cat]
         if not cat_preds:
             continue
 
-        total_plan = sum(p.get('plan', 0) for p in cat_preds)
-        reasons = [p.get('reason') for p in cat_preds if p.get('reason')]
+        total_plan = sum(p.get("plan", 0) for p in cat_preds)
+        reasons = [p.get("reason") for p in cat_preds if p.get("reason")]
         counter = Counter(reasons)
 
         reason_table[cat] = []
 
         for reason, count in counter.items():
             total_failure = sum(
-                p.get('failure', 0)
+                p.get("failure", 0)
                 for p in cat_preds
-                if p.get('reason') == reason
+                if p.get("reason") == reason
             )
-
-            solved_actual = max(total_plan - total_failure, 0)
-
             reason_table[cat].append({
                 "reason": reason,
                 "count": count,
-                "future_actual": solved_actual
+                "future_actual": max(total_plan - total_failure, 0),
             })
 
     # ---------------- MONTH NAME ----------------
-    last_date = df['date'].max()
-    next_month = last_date + relativedelta(months=1)
-    month_name = next_month.strftime("%B %Y")
+    month_name = ""
+    if not IS_RENDER and df is not None and "date" in df:
+        last_date = df["date"].max()
+        month_name = (last_date + relativedelta(months=1)).strftime("%B %Y")
 
-    # ---------------- CONTEXT ----------------
-    context = {
-        "seven_day": results.get("predictions", []),
-        "thirty_day": predictions,
-        "latest_file": latest_file,
-        "month_name": month_name,
-        "total_investment": round(total_investment, 2),
-        "failures_days": all_days,
-        "chart_datasets_json": json.dumps(chart_datasets),
-        "reason_table": reason_table,
-    }
-
-    return render(request, "analysi/future_predictions.html", context)
+    return render(
+        request,
+        "analysi/future_predictions.html",
+        {
+            "seven_day": results.get("predictions", []),
+            "thirty_day": predictions,
+            "latest_file": latest_file,
+            "month_name": month_name,
+            "total_investment": round(total_investment, 2),
+            "failures_days": all_days,
+            "chart_datasets_json": json.dumps(chart_datasets),
+            "reason_table": reason_table,
+        }
+    )
 
 
 def get_category_color(category):
