@@ -278,22 +278,104 @@ def profit_analysis(request):
 
 # ---------------- FUTURE BOX SCORE PAGE ----------------
 def future_box_score(request):
+    import os
     import random
-    from .ml.ml_cache import load_ml_results
+    import pandas as pd
+    from django.conf import settings
+    from django.shortcuts import render, redirect
+    from django.contrib import messages
 
-    results = load_ml_results()
-    if not results:
-        messages.error(request, "ML results not found.")
-        return redirect("algorithms")
+    upload_dir = os.path.join(settings.MEDIA_ROOT, "uploads")
+    os.makedirs(upload_dir, exist_ok=True)
 
-    base_predictions = results.get("future_box_base_predictions", [])
+    latest_file = get_latest_file(upload_dir)
+    if not latest_file:
+        messages.error(request, "No Excel uploaded")
+        return redirect("upload_file")
 
-    if not base_predictions:
-        messages.error(request, "Future profit base data missing.")
-        return render(request, "analysi/future_box_score.html", {
-            "future_day_tables": [],
-            "weekly_summary": [],
-        })
+    file_path = os.path.join(upload_dir, latest_file)
+
+    # ✅ READ RAW EXCEL ONLY (NO ML, NO extract_data)
+    try:
+        df_raw = pd.read_excel(file_path, header=None, nrows=800)
+    except Exception as e:
+        messages.error(request, "Unable to read Excel file")
+        return redirect("dashboard")
+
+    def safe_float(x):
+        try:
+            x = str(x).strip()
+            if x in ["", "-", "--", "nan", "None"]:
+                return 0
+            return float(x)
+        except:
+            return 0
+
+    ALLOWED_CATEGORIES = [
+        "FEED PUMP",
+        "WATER PUMP",
+        "PCN",
+        "COOLANT ELBOW & COVERS",
+        "PULLEY",
+    ]
+
+    base_predictions = []
+    value_start_col = 2
+
+    # ---------------- HEADER DETECTION ----------------
+    header_rows = df_raw[
+        df_raw.apply(
+            lambda r: (
+                "FEED PUMP" in " ".join(map(str, r)).upper()
+                and "WATER PUMP" in " ".join(map(str, r)).upper()
+            ),
+            axis=1
+        )
+    ]
+
+    for header_idx in header_rows.index:
+        header = df_raw.iloc[header_idx]
+        headers = []
+        header_col_indexes = []
+
+        for col_idx in range(value_start_col, df_raw.shape[1]):
+            normalized = normalize_category_header(header[col_idx])
+            if normalized and normalized in ALLOWED_CATEGORIES:
+                headers.append(normalized)
+                header_col_indexes.append(col_idx)
+
+        metric_map = {}
+
+        for metric in ["Productive", "REVENUE", "Material Cost", "Conversion Cost"]:
+            match = df_raw.iloc[header_idx:][
+                df_raw.iloc[header_idx:].apply(
+                    lambda r: metric.upper() in " ".join(map(str, r)).upper(),
+                    axis=1
+                )
+            ]
+
+            values = []
+            for col_idx in header_col_indexes:
+                val = ""
+                if not match.empty and col_idx < df_raw.shape[1]:
+                    val = match.iloc[0, col_idx]
+                values.append(val)
+
+            metric_map[metric] = values
+
+        for idx, category in enumerate(headers):
+            base_predictions.append({
+                "category": category,
+                "current_productive": safe_float(metric_map["Productive"][idx]),
+                "current_revenue": safe_float(metric_map["REVENUE"][idx]),
+                "material": safe_float(metric_map["Material Cost"][idx]),
+                "conversion": safe_float(metric_map["Conversion Cost"][idx]),
+            })
+
+    # ---------------- FUTURE CALCULATION ----------------
+    future_day_tables = []
+    daily_totals = []
+    category_day_values = {}
 
     NEGATIVE_PROFIT = {
         "FEED PUMP": -18573,
@@ -303,53 +385,89 @@ def future_box_score(request):
         "PCN": -9616,
     }
 
-    future_day_tables = []
-    daily_totals = []
     day_number = 1
+    categories_per_day = 5
 
-    for i in range(0, len(base_predictions), 5):
+    for start in range(0, len(base_predictions), categories_per_day):
         rows = []
-        for base in base_predictions[i:i + 5]:
+        chunk = base_predictions[start:start + categories_per_day]
+
+        for base in chunk:
             pf = random.uniform(1.05, 1.15)
             cf = random.uniform(0.95, 1.08)
 
-            fr = int(base["current_revenue"] * pf)
-            fm = int(base["material"] * cf)
-            fc = int(base["conversion"] * cf)
+            f_productive = int(base["current_productive"] * pf)
+            f_revenue = int(base["current_revenue"] * pf)
+            f_material = int(base["material"] * cf)
+            f_conversion = int(base["conversion"] * cf)
 
-            profit = fr - (fm + fc) if base["current_revenue"] else NEGATIVE_PROFIT.get(base["category"], -fc)
+            f_profit = (
+                NEGATIVE_PROFIT.get(base["category"], -abs(f_conversion))
+                if base["current_revenue"] == 0
+                else f_revenue - (f_material + f_conversion)
+            )
 
             rows.append({
                 "category": base["category"],
-                "future_productive": int(base["current_productive"] * pf),
-                "future_revenue": fr,
-                "future_profit": profit,
+                "current_productive": int(base["current_productive"]),
+                "future_productive": f_productive,
+                "current_revenue": int(base["current_revenue"]),
+                "future_revenue": f_revenue,
+                "future_profit": f_profit,
             })
 
-        future_day_tables.append({"day": f"Day {day_number}", "rows": rows})
+            category_day_values.setdefault(base["category"], []).append({
+                "productive": f_productive,
+                "revenue": f_revenue,
+                "profit": f_profit,
+            })
+
+        future_day_tables.append({
+            "day": f"Day {day_number}",
+            "rows": rows
+        })
+
         daily_totals.append({
             "productive": sum(r["future_productive"] for r in rows),
             "revenue": sum(r["future_revenue"] for r in rows),
             "profit": sum(r["future_profit"] for r in rows),
         })
+
         day_number += 1
 
+    # ---------------- WEEKLY SUMMARY ----------------
     weekly_summary = []
-    for i in range(0, len(daily_totals), 7):
-        chunk = daily_totals[i:i + 7]
+    week_size = 7
+
+    for i in range(0, len(daily_totals), week_size):
+        week_data = daily_totals[i:i + week_size]
+
+        weekly_categories = []
+        for cat, vals in category_day_values.items():
+            chunk_vals = vals[i:i + week_size]
+            weekly_categories.append({
+                "category": cat,
+                "productive": sum(v["productive"] for v in chunk_vals),
+                "revenue": sum(v["revenue"] for v in chunk_vals),
+                "profit": sum(v["profit"] for v in chunk_vals),
+            })
+
         weekly_summary.append({
-            "week": f"Day {i + 1}-{i + len(chunk)}",
-            "total_productive": sum(d["productive"] for d in chunk),
-            "total_revenue": sum(d["revenue"] for d in chunk),
-            "total_profit": sum(d["profit"] for d in chunk),
+            "week": f"Day {i + 1}-{i + len(week_data)}",
+            "total_productive": sum(d["productive"] for d in week_data),
+            "total_revenue": sum(d["revenue"] for d in week_data),
+            "total_profit": sum(d["profit"] for d in week_data),
+            "category_summary": weekly_categories,
         })
 
-    return render(request, "analysi/future_box_score.html", {
-        "future_day_tables": future_day_tables,
-        "weekly_summary": weekly_summary,
-    })
-
-
+    return render(
+        request,
+        "analysi/future_box_score.html",
+        {
+            "future_day_tables": future_day_tables,
+            "weekly_summary": weekly_summary,
+        }
+    )
 
 # Helper: Validate category name
 def is_valid_category(cat):
