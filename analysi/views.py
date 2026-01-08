@@ -120,6 +120,7 @@ def normalize_category_header(name):
 
     return ""
 
+
 def profit_analysis(request):
     import os
     import pandas as pd
@@ -140,8 +141,6 @@ def profit_analysis(request):
 
     file_path = os.path.join(upload_dir, latest_file)
 
-    # ❌ REMOVED extract_data() → saves memory
-
     try:
         df_raw = pd.read_excel(file_path, header=None, nrows=800)
     except Exception:
@@ -157,7 +156,7 @@ def profit_analysis(request):
         return redirect('algorithms')
 
     # ==============================================================
-    # ✅ BOX SCORE TABLE (UNCHANGED LOGIC)
+    # BOX SCORE CONFIG
     # ==============================================================
     ALLOWED_CATEGORIES = [
         "FEED PUMP",
@@ -180,6 +179,18 @@ def profit_analysis(request):
     box_score_tables = []
     future_predictions = []
 
+    # ================= SAFE NUMBER HELPER (🔥 FIX) =================
+    def safe_num(x):
+        if x is None or pd.isna(x):
+            return 0
+        try:
+            return float(x)
+        except:
+            return 0
+
+    # ==============================================================
+    # PROCESS RAW EXCEL
+    # ==============================================================
     if df_raw is not None:
         value_start_col = 2
 
@@ -217,7 +228,7 @@ def profit_analysis(request):
 
                 values = []
                 for col_idx in header_col_indexes:
-                    val = match.iloc[0, col_idx] if not match.empty else ""
+                    val = match.iloc[0, col_idx] if not match.empty else 0
                     values.append(val)
 
                 metric_map[metric] = values
@@ -232,28 +243,25 @@ def profit_analysis(request):
                 "rows": rows
             })
 
-            # 🔮 FUTURE (UI SIMULATION ONLY)
+            # ================= FUTURE PROFIT TABLE (FIXED) =================
             for idx, category in enumerate(headers):
-                try:
-                    productive = float(metric_map["Productive"][idx] or 0)
-                    revenue = float(metric_map["REVENUE"][idx] or 0)
-                    material = float(metric_map["Material Cost"][idx] or 0)
-                    conversion = float(metric_map["Conversion Cost"][idx] or 0)
-                except:
-                    continue
+                productive = safe_num(metric_map["Productive"][idx])
+                revenue = safe_num(metric_map["REVENUE"][idx])
+                material = safe_num(metric_map["Material Cost"][idx])
+                conversion = safe_num(metric_map["Conversion Cost"][idx])
 
                 future_predictions.append({
                     "category": category,
-                    "current_productive": productive,
+                    "current_productive": int(productive),
                     "future_productive": int(productive * random.uniform(1.05, 1.15)),
-                    "current_revenue": revenue,
+                    "current_revenue": int(revenue),
                     "future_revenue": int(revenue * random.uniform(1.05, 1.15)),
                     "future_profit": int(
-                        revenue * 1.1 - (material + conversion)
+                        (revenue * 1.1) - (material + conversion)
                     ),
                 })
 
-    # ---------------- CONTEXT ----------------
+    # ================= CONTEXT =================
     context = {
         "box_score_tables": box_score_tables,
         "future_predictions": future_predictions,
