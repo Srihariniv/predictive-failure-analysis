@@ -68,6 +68,7 @@
             <a href="{% url 'dashboard' %}" class="hover:text-yellow-300">Dashboard</a>
             <a href="{% url 'upload_file' %}" class="hover:text-yellow-300">Upload</a>
             <a href="{% url 'raw_data' %}" class="hover:text-yellow-300">Raw Data</a>
+            <a href="{% url 'algorithms' %}" class="hover:underline">Algorithms</a>
             <a href="{% url 'profit_analysis' %}"
                class="{% if request.resolver_match.url_name == 'profit_analysis' %}text-yellow-300 underline{% endif %}">
                Profit Analysis

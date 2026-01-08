@@ -132,6 +132,7 @@
             <a href="{% url 'dashboard' %}" class="hover:underline font-bold">Dashboard</a>
             <a href="{% url 'upload_file' %}" class="hover:underline">Upload</a>
             <a href="{% url 'raw_data' %}" class="hover:underline">Raw Data</a>
+            <a href="{% url 'algorithms' %}" class="hover:underline">Algorithms</a>
             <a href="{% url 'profit_analysis' %}"
    class="hover:underline {% if request.resolver_match.url_name == 'profit_analysis' %}font-bold text-yellow-300 underline{% endif %}">
    Profit Analysis
@@ -145,10 +146,11 @@
     </div>
 </nav>
 
+<br><strong><h1 class="section-title">📊 Profit Analysis</h1></strong>
 <!-- ================= PAGE CONTENT ================= -->
 <div class="page-container">
 
-    <h1>📊 Profit Analysis</h1>
+    
 
     <!-- ================= BOX SCORE TABLE ================= -->
     {% if box_score_tables %}
