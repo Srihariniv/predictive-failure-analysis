@@ -267,7 +267,7 @@
   document.addEventListener('DOMContentLoaded', function () {
 
     // ==============================
-    // WAVEFORM CHART (MAIN FIX)
+    // WAVEFORM CHART (DUPLICATE FIX)
     // ==============================
     const waveformCtx = document.getElementById('waveformChart');
     if (!waveformCtx) return;
@@ -281,20 +281,42 @@
       if (!t || !t.plan_values) return;
 
       const [bg, border] = getWaveformColor(category);
-      const points = [];
+
+      // 🔑 DEDUPLICATION MAP (BY PLAN VALUE)
+      const pointsMap = {};
 
       t.plan_values.forEach((plan, i) => {
-        const rate = Math.max(0, t.failure_rates[i] || 0);   // 🔒 no negative
-        if (plan > 0) {
-          points.push({
+        if (plan <= 0) return;
+
+        const rate = Math.max(0, t.failure_rates[i] || 0);
+        const key = plan; // dedupe by plan quantity
+
+        if (!pointsMap[key]) {
+          pointsMap[key] = {
             x: plan,
             y: rate,
-            actual: t.actual_values[i] || 0,
             failure: t.failure_values[i] || 0,
+            actual: t.actual_values[i] || 0,
+            count: 1,
             category: category
-          });
+          };
+        } else {
+          // merge duplicates
+          pointsMap[key].y += rate;
+          pointsMap[key].failure += t.failure_values[i] || 0;
+          pointsMap[key].actual += t.actual_values[i] || 0;
+          pointsMap[key].count += 1;
         }
       });
+
+      // 🔄 CONVERT MAP → ARRAY (AVERAGED)
+      const points = Object.values(pointsMap).map(p => ({
+        x: p.x,
+        y: +(p.y / p.count).toFixed(2),
+        failure: Math.round(p.failure / p.count),
+        actual: Math.round(p.actual / p.count),
+        category: p.category
+      }));
 
       if (!points.length) return;
 
@@ -306,13 +328,13 @@
         borderColor: border,
         backgroundColor: bg,
         borderWidth: 2,
-        tension: 0.25,        // ✅ smoother
-        spanGaps: true,       // ✅ no broken lines
+        tension: 0.25,
+        spanGaps: true,
         fill: false,
         pointRadius: 3
       });
 
-      // SCATTER POINTS
+      // SCATTER POINTS (for hover accuracy)
       datasets.push({
         label: `${category} points`,
         type: 'scatter',
@@ -416,7 +438,6 @@
 
   });
 </script>
-
 
 </body>
 </html>
