@@ -9,6 +9,12 @@
     <script src="https://cdn.tailwindcss.com"></script>
 
     <style>
+        /* ================= BASE ================= */
+        html, body {
+            max-width: 100%;
+            overflow-x: hidden; /* 🔑 prevent page side scroll */
+        }
+
         body {
             font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
             background: #f3f4f6;
@@ -16,21 +22,33 @@
             padding: 0;
         }
 
-        /* FIXED NAVBAR - NO WRAPPING */
+        /* ================= NAVBAR ================= */
         nav {
             background: linear-gradient(to right, #0d9488, #14b8a6);
-            overflow-x: auto; /* Horizontal scroll if needed */
-            -webkit-overflow-scrolling: touch;
+            overflow: hidden;
         }
 
-        nav .nav-inner {
-            min-width: 650px; /* Force single line */
+        .nav-inner {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            white-space: nowrap;
+            gap: 12px;
+            flex-wrap: wrap; /* 🔑 allow wrap */
         }
 
+        @media (max-width: 900px) {
+            .nav-inner {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+
+            .nav-inner > div {
+                flex-wrap: wrap;
+                gap: 8px;
+            }
+        }
+
+        /* ================= PAGE CONTAINER ================= */
         .page-container {
             max-width: 100%;
             margin: 0;
@@ -75,20 +93,28 @@
             .section-title { font-size: 1.5rem; }
         }
 
-        /* PERFECT RESPONSIVE TABLE */
+        /* ================= TABLE ================= */
         .table-wrapper {
             background: #ffffff;
             border-radius: 12px;
             box-shadow: 0 10px 25px rgba(0,0,0,0.1);
-            overflow-x: auto;
+            overflow-x: auto; /* 🔑 table scroll only */
             -webkit-overflow-scrolling: touch;
             border: 1px solid #e5e7eb;
         }
 
         table {
             width: 100%;
-            min-width: 850px; /* Perfect width */
+            min-width: 720px; /* tablet-safe default */
             border-collapse: collapse;
+        }
+
+        @media (max-width: 900px) {
+            table { min-width: 600px; }
+        }
+
+        @media (max-width: 640px) {
+            table { min-width: 520px; }
         }
 
         thead th {
@@ -110,7 +136,6 @@
             font-size: 0.85rem;
         }
 
-        /* Mobile optimizations */
         @media (max-width: 640px) {
             thead th,
             tbody td {
@@ -128,6 +153,7 @@
 
         tbody tr:nth-child(even) { background: #f9fafb; }
         tbody tr:hover { background: #ecfdf5; }
+
         .Capacity td { background: #dcfce7 !important; }
         .Financial td { background: #dbeafe !important; }
 
@@ -148,27 +174,14 @@
 
 <body class="bg-gray-100">
 
-<!-- FIXED NAVBAR - SINGLE LINE ALWAYS -->
-<nav class="text-white shadow-lg">
-    <div class="container mx-auto px-6 py-4">
-        <div class="nav-inner">
-            <a href="{% url 'home' %}" class="text-2xl font-bold flex-shrink-0">Predictive Failure Analysis Using AI</a>
-            <div class="flex gap-4 text-sm ml-8 flex-shrink-0">
-                <a href="{% url 'dashboard' %}" class="hover:underline whitespace-nowrap px-2 py-1 rounded hover:bg-white/20">Dashboard</a>
-                <a href="{% url 'upload_file' %}" class="hover:underline whitespace-nowrap px-2 py-1 rounded hover:bg-white/20">Upload</a>
-                <a href="{% url 'raw_data' %}" class="hover:underline whitespace-nowrap px-2 py-1 rounded hover:bg-white/20">Raw Data</a>
-                <a href="{% url 'algorithms' %}" class="hover:underline whitespace-nowrap px-2 py-1 rounded hover:bg-white/20">Algorithms</a>
-                <a href="{% url 'profit_analysis' %}" class="hover:underline font-bold text-yellow-300 underline whitespace-nowrap px-2 py-1 rounded bg-white/20">Profit Analysis</a>
-                <a href="{% url 'future_predictions' %}" class="hover:underline whitespace-nowrap px-2 py-1 rounded hover:bg-white/20">Future</a>
-                <a href="{% url 'future_box_score' %}" class="hover:underline whitespace-nowrap px-2 py-1 rounded hover:bg-white/20">Future Profit</a>
-            </div>
-        </div>
-    </div>
-</nav>
+<!-- ================= NAVBAR ================= -->
+{% extends "analysi/base.html" %}
 
-<!-- CONTENT -->
+{% block content %}
+<!-- ALL dashboard code here (charts, tables, scripts, styles) -->
+<!-- ================= CONTENT ================= -->
 <div class="page-container">
-    <h1 class="text-4xl font-bold text-center mb-8 text-gray-800">📊 Profit Analysis</h1>
+    <h1>📊 Profit Analysis</h1>
 
     {% if box_score_tables %}
         {% for table in box_score_tables %}
@@ -227,7 +240,9 @@
                         <td>{{ row.future_productive }}</td>
                         <td>₹{{ row.current_revenue }}</td>
                         <td>₹{{ row.future_revenue }}</td>
-                        <td class="{% if row.future_profit > 0 %}profit-positive{% else %}profit-negative{% endif %}">₹{{ row.future_profit }}</td>
+                        <td class="{% if row.future_profit > 0 %}profit-positive{% else %}profit-negative{% endif %}">
+                            ₹{{ row.future_profit }}
+                        </td>
                     </tr>
                     {% endfor %}
                 </tbody>
@@ -239,3 +254,4 @@
 
 </body>
 </html>
+{% endblock %}
