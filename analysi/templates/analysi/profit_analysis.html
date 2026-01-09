@@ -5,161 +5,176 @@
     <title>Profit Analysis</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-    <!-- Tailwind CSS (for navbar) -->
+    <!-- Tailwind CSS CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
 
     <style>
         body {
             font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
-            background: #f4f6f9;
+            background: #f3f4f6;
             margin: 0;
             padding: 0;
         }
 
-        /* ✅ IMPORTANT: renamed container to avoid Tailwind conflict */
+        /* FIXED NAVBAR - NO WRAPPING */
+        nav {
+            background: linear-gradient(to right, #0d9488, #14b8a6);
+            overflow-x: auto; /* Horizontal scroll if needed */
+            -webkit-overflow-scrolling: touch;
+        }
+
+        nav .nav-inner {
+            min-width: 650px; /* Force single line */
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            white-space: nowrap;
+        }
+
         .page-container {
-            max-width: 1600px;
-            margin: 30px auto;
+            max-width: 100%;
+            margin: 0;
+            padding: 24px;
             background: #ffffff;
-            padding: 20px;
-            border-radius: 10px;
-            box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+        }
+
+        @media (min-width: 768px) {
+            .page-container {
+                max-width: 1200px;
+                margin: 24px auto;
+                padding: 32px;
+                border-radius: 12px;
+                box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+            }
         }
 
         h1 {
             text-align: center;
-            margin-bottom: 30px;
-            color: #2c3e50;
+            margin-bottom: 24px;
+            color: #1f2937;
+            font-size: 2.25rem;
+            font-weight: bold;
         }
 
-        .section {
-            margin-bottom: 40px;
+        @media (max-width: 640px) {
+            h1 { font-size: 1.875rem; }
         }
+
+        .section { margin-bottom: 32px; }
 
         .section-title {
-            font-size: 1.4rem;
-            font-weight: 600;
-            margin-bottom: 15px;
-            color: #34495e;
-            border-left: 5px solid #38e4b0;
-            padding-left: 10px;
+            font-size: 1.875rem;
+            font-weight: bold;
+            margin-bottom: 16px;
+            color: #374151;
+            border-left: 5px solid #10b981;
+            padding-left: 12px;
         }
 
-        .table-container {
+        @media (max-width: 640px) {
+            .section-title { font-size: 1.5rem; }
+        }
+
+        /* PERFECT RESPONSIVE TABLE */
+        .table-wrapper {
+            background: #ffffff;
+            border-radius: 12px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.1);
             overflow-x: auto;
-            border: 1px solid #ddd;
-            border-radius: 6px;
+            -webkit-overflow-scrolling: touch;
+            border: 1px solid #e5e7eb;
         }
 
         table {
             width: 100%;
+            min-width: 850px; /* Perfect width */
             border-collapse: collapse;
-            min-width: 900px;
         }
 
         thead th {
-            position: sticky;
-            top: 0;
-            background: #34db6c;
+            background: #10b981;
             color: white;
             font-weight: 600;
-            padding: 10px;
-            border: 1px solid #ddd;
+            padding: 12px 10px;
+            border-right: 1px solid #34d399;
             text-align: center;
             white-space: nowrap;
+            font-size: 0.85rem;
         }
 
         tbody td {
-            padding: 8px 10px;
-            border: 1px solid #e0e0e0;
+            padding: 12px 10px;
+            border-right: 1px solid #d1d5db;
             text-align: center;
             white-space: nowrap;
+            font-size: 0.85rem;
+        }
+
+        /* Mobile optimizations */
+        @media (max-width: 640px) {
+            thead th,
+            tbody td {
+                padding: 8px 6px;
+                font-size: 0.8rem;
+            }
         }
 
         tbody td:first-child,
         tbody td:nth-child(2) {
             font-weight: 600;
-            background: #f8f9fb;
+            background: #f0fdf4;
             text-align: left;
         }
 
-        tbody tr:nth-child(even) {
-            background: #fafafa;
-        }
+        tbody tr:nth-child(even) { background: #f9fafb; }
+        tbody tr:hover { background: #ecfdf5; }
+        .Capacity td { background: #dcfce7 !important; }
+        .Financial td { background: #dbeafe !important; }
 
-        tbody tr:hover {
-            background: #eef6ff;
-        }
-
-        .Capacity {
-            background: #e8f5e9 !important;
-        }
-
-        .Financial {
-            background: #e3f2fd !important;
-        }
-
-        .profit-positive {
-            color: #2e7d32;
-            font-weight: 600;
-        }
-
-        .profit-negative {
-            color: #c62828;
-            font-weight: 600;
-        }
+        .profit-positive { color: #166534; font-weight: 700; }
+        .profit-negative { color: #dc2626; font-weight: 700; }
 
         .no-data {
             text-align: center;
-            padding: 30px;
-            font-size: 1.1rem;
-            color: #777;
-            background: #fafafa;
-            border-radius: 6px;
+            padding: 48px 24px;
+            font-size: 1.125rem;
+            color: #6b7280;
+            background: #f9fafb;
+            border-radius: 12px;
+            border: 2px dashed #d1d5db;
         }
     </style>
 </head>
 
-<body>
+<body class="bg-gray-100">
 
-<!-- ================= NAVBAR (SAME AS DASHBOARD) ================= -->
-<nav class="bg-gradient-to-r from-teal-600 to-teal-700 text-white shadow-lg relative z-50">
-    <div class="container mx-auto px-6 py-4 flex justify-between items-center">
-        <a href="{% url 'home' %}" class="text-2xl font-bold">
-            Predictive Failure Analysis Using AI
-        </a>
-        <div class="flex gap-6 text-sm">
-            <a href="{% url 'dashboard' %}" class="hover:underline font-bold">Dashboard</a>
-            <a href="{% url 'upload_file' %}" class="hover:underline">Upload</a>
-            <a href="{% url 'raw_data' %}" class="hover:underline">Raw Data</a>
-            <a href="{% url 'algorithms' %}" class="hover:underline">Algorithms</a>
-            <a href="{% url 'profit_analysis' %}"
-   class="hover:underline {% if request.resolver_match.url_name == 'profit_analysis' %}font-bold text-yellow-300 underline{% endif %}">
-   Profit Analysis
-</a>
-            <a href="{% url 'future_predictions' %}" class="hover:underline">Future (30 Days)</a>
-            <a href="{% url 'future_box_score' %}"
-               class="{% if request.resolver_match.url_name == 'future_box_score' %}text-yellow-300 underline{% endif %}">
-               Future Profit
-            </a>
+<!-- FIXED NAVBAR - SINGLE LINE ALWAYS -->
+<nav class="text-white shadow-lg">
+    <div class="container mx-auto px-6 py-4">
+        <div class="nav-inner">
+            <a href="{% url 'home' %}" class="text-2xl font-bold flex-shrink-0">Predictive Failure Analysis Using AI</a>
+            <div class="flex gap-4 text-sm ml-8 flex-shrink-0">
+                <a href="{% url 'dashboard' %}" class="hover:underline whitespace-nowrap px-2 py-1 rounded hover:bg-white/20">Dashboard</a>
+                <a href="{% url 'upload_file' %}" class="hover:underline whitespace-nowrap px-2 py-1 rounded hover:bg-white/20">Upload</a>
+                <a href="{% url 'raw_data' %}" class="hover:underline whitespace-nowrap px-2 py-1 rounded hover:bg-white/20">Raw Data</a>
+                <a href="{% url 'algorithms' %}" class="hover:underline whitespace-nowrap px-2 py-1 rounded hover:bg-white/20">Algorithms</a>
+                <a href="{% url 'profit_analysis' %}" class="hover:underline font-bold text-yellow-300 underline whitespace-nowrap px-2 py-1 rounded bg-white/20">Profit Analysis</a>
+                <a href="{% url 'future_predictions' %}" class="hover:underline whitespace-nowrap px-2 py-1 rounded hover:bg-white/20">Future</a>
+                <a href="{% url 'future_box_score' %}" class="hover:underline whitespace-nowrap px-2 py-1 rounded hover:bg-white/20">Future Profit</a>
+            </div>
         </div>
     </div>
 </nav>
 
-<br><strong><h1 class="section-title">📊 Profit Analysis</h1></strong>
-<!-- ================= PAGE CONTENT ================= -->
+<!-- CONTENT -->
 <div class="page-container">
+    <h1 class="text-4xl font-bold text-center mb-8 text-gray-800">📊 Profit Analysis</h1>
 
-    
-
-    <!-- ================= BOX SCORE TABLE ================= -->
     {% if box_score_tables %}
         {% for table in box_score_tables %}
         <div class="section">
-
             <h2 class="section-title">📋 Capacity & Financial Summary</h2>
-
-            <div class="table-container">
+            <div class="table-wrapper">
                 <table>
                     <thead>
                         <tr>
@@ -170,7 +185,6 @@
                             {% endfor %}
                         </tr>
                     </thead>
-
                     <tbody>
                         {% for row in table.rows %}
                         <tr class="{{ row.section }}">
@@ -184,19 +198,16 @@
                     </tbody>
                 </table>
             </div>
-
         </div>
         {% endfor %}
     {% else %}
         <div class="no-data">📭 No Box Score data available</div>
     {% endif %}
 
-    <!-- ================= FUTURE PREDICTION TABLE ================= -->
     {% if future_predictions %}
     <div class="section">
         <h2 class="section-title">🔮 Future Prediction (Simulated)</h2>
-
-        <div class="table-container">
+        <div class="table-wrapper">
             <table>
                 <thead>
                     <tr>
@@ -216,9 +227,7 @@
                         <td>{{ row.future_productive }}</td>
                         <td>₹{{ row.current_revenue }}</td>
                         <td>₹{{ row.future_revenue }}</td>
-                        <td class="{% if row.future_profit > 0 %}profit-positive{% else %}profit-negative{% endif %}">
-                            ₹{{ row.future_profit }}
-                        </td>
+                        <td class="{% if row.future_profit > 0 %}profit-positive{% else %}profit-negative{% endif %}">₹{{ row.future_profit }}</td>
                     </tr>
                     {% endfor %}
                 </tbody>
@@ -226,7 +235,6 @@
         </div>
     </div>
     {% endif %}
-
 </div>
 
 </body>

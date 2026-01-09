@@ -33,27 +33,66 @@
   {% load extra_filters %}
 
   <!-- NAVIGATION -->
-  <nav class="bg-gradient-to-r from-teal-600 to-teal-700 text-white shadow-lg">
-    <div class="container mx-auto px-6 py-4 flex justify-between items-center">
-      <a href="{% url 'home' %}" class="text-2xl font-bold">Predictive Failure Analysis Using AI</a>
-      <div class="flex gap-6 text-sm">
-        <a href="{% url 'dashboard' %}" class="hover:underline font-bold">Dashboard</a>
-        <a href="{% url 'upload_file' %}" class="hover:underline">Upload</a>
-        <a href="{% url 'raw_data' %}" class="hover:underline">Raw Data</a>
-        <a href="{% url 'algorithms' %}" class="hover:underline">Algorithms</a>
-        <a href="{% url 'profit_analysis' %}"
-   class="hover:underline {% if request.resolver_match.url_name == 'profit_analysis' %}font-bold text-yellow-300 underline{% endif %}">
-   Profit Analysis
-</a>
+  <!-- ================= NAVIGATION ================= -->
+<nav class="bg-gradient-to-r from-teal-600 to-teal-700 text-white shadow-lg">
+  <div class="container mx-auto px-6 py-4 flex justify-between items-center">
 
-        <a href="{% url 'future_predictions' %}" class="hover:underline">Future (30 Days)</a>
-        <a href="{% url 'future_box_score' %}"
-               class="{% if request.resolver_match.url_name == 'future_box_score' %}text-yellow-300 underline{% endif %}">
-               Future Profit
-            </a>
-      </div>
+    <!-- LOGO -->
+    <a href="{% url 'home' %}" class="text-2xl font-bold">
+      Predictive Failure Analysis Using AI
+    </a>
+
+    <!-- DESKTOP MENU (UNCHANGED) -->
+    <div class="hidden md:flex gap-6 text-sm">
+      <a href="{% url 'dashboard' %}" class="hover:underline font-bold">Dashboard</a>
+      <a href="{% url 'upload_file' %}" class="hover:underline">Upload</a>
+      <a href="{% url 'raw_data' %}" class="hover:underline">Raw Data</a>
+      <a href="{% url 'algorithms' %}" class="hover:underline">Algorithms</a>
+
+      <a href="{% url 'profit_analysis' %}"
+        class="hover:underline {% if request.resolver_match.url_name == 'profit_analysis' %}font-bold text-yellow-300 underline{% endif %}">
+        Profit Analysis
+      </a>
+
+      <a href="{% url 'future_predictions' %}" class="hover:underline">Future (30 Days)</a>
+
+      <a href="{% url 'future_box_score' %}"
+        class="{% if request.resolver_match.url_name == 'future_box_score' %}text-yellow-300 underline{% endif %}">
+        Future Profit
+      </a>
     </div>
-  </nav>
+
+    <!-- HAMBURGER BUTTON (MOBILE ONLY) -->
+    <button id="menuBtn" class="md:hidden focus:outline-none">
+      <svg class="w-7 h-7" fill="none" stroke="currentColor" stroke-width="2"
+           viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round"
+              d="M4 6h16M4 12h16M4 18h16" />
+      </svg>
+    </button>
+  </div>
+
+  <!-- MOBILE MENU -->
+  <div id="mobileMenu" class="hidden md:hidden px-6 pb-4 space-y-3 text-sm">
+    <a href="{% url 'dashboard' %}" class="block hover:underline font-bold">Dashboard</a>
+    <a href="{% url 'upload_file' %}" class="block hover:underline">Upload</a>
+    <a href="{% url 'raw_data' %}" class="block hover:underline">Raw Data</a>
+    <a href="{% url 'algorithms' %}" class="block hover:underline">Algorithms</a>
+
+    <a href="{% url 'profit_analysis' %}"
+      class="block hover:underline {% if request.resolver_match.url_name == 'profit_analysis' %}font-bold text-yellow-300 underline{% endif %}">
+      Profit Analysis
+    </a>
+
+    <a href="{% url 'future_predictions' %}" class="block hover:underline">Future (30 Days)</a>
+
+    <a href="{% url 'future_box_score' %}"
+      class="block {% if request.resolver_match.url_name == 'future_box_score' %}text-yellow-300 underline{% endif %}">
+      Future Profit
+    </a>
+  </div>
+</nav>
+<!-- ================= END NAVIGATION ================= -->
 
   <div class="container mx-auto p-6" id="dashboard-content">
 
@@ -244,6 +283,10 @@
   </div>
 
   <script>
+
+
+
+
   // ==============================
   // COLOR MAPPING
   // ==============================
