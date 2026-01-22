@@ -8,9 +8,8 @@
   <!-- Tailwind -->
   <script src="https://cdn.tailwindcss.com"></script>
 
-  <!-- Chart.js (unchanged) -->
+  <!-- Chart.js -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@2.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
 
   <!-- Font -->
   <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700&display=swap" rel="stylesheet" />
@@ -41,20 +40,17 @@
 
 <body class="bg-gradient-to-br from-gray-50 via-teal-50 to-white min-h-screen">
 
-<!-- ================= DASHBOARD STYLE NAVBAR (SAME AS DASHBOARD MOBILE) ================= -->
-<nav class="bg-gradient-to-r from-teal-600 to-teal-700 text-white shadow-lg">
-  <div class="container mx-auto px-6 py-4 flex items-center gap-4 overflow-x-auto">
+<!-- ================= SAME DASHBOARD NAVBAR ================= -->
+<nav class="bg-gradient-to-r from-teal-600 to-teal-700 text-white shadow-lg fixed top-0 left-0 right-0 z-50">
+  <div class="container mx-auto px-6 py-4 flex justify-between items-center">
 
-    <!-- Title -->
-    <a href="{% url 'home' %}"
-       class="text-sm sm:text-base md:text-2xl font-bold whitespace-nowrap flex-shrink-0">
+    <!-- LOGO -->
+    <a href="{% url 'home' %}" class="text-xl md:text-2xl font-bold">
       Predictive Failure Analysis Using AI
     </a>
 
-    <!-- Menu (always visible, no hamburger) -->
-    <div class="flex gap-2 sm:gap-3 md:gap-6
-            text-[10px] sm:text-xs md:text-sm
-            items-center">
+    <!-- DESKTOP MENU -->
+    <div class="hidden md:flex gap-6 text-sm items-center">
       <a href="{% url 'dashboard' %}" class="hover:underline">Dashboard</a>
       <a href="{% url 'upload_file' %}" class="hover:underline">Upload</a>
       <a href="{% url 'raw_data' %}" class="font-bold underline text-yellow-300">Raw Data</a>
@@ -64,12 +60,30 @@
       <a href="{% url 'future_box_score' %}" class="hover:underline">Future Profit</a>
     </div>
 
+    <!-- MOBILE HAMBURGER -->
+    <button id="menuBtn" class="md:hidden text-2xl">
+      ☰
+    </button>
+  </div>
+
+  <!-- MOBILE MENU (DASHBOARD STYLE) -->
+  <div id="mobileMenu"
+       class="hidden md:hidden fixed top-[72px] left-0 w-64 h-full
+              bg-teal-700 text-white px-6 py-6 space-y-4 shadow-xl">
+
+    <a href="{% url 'dashboard' %}" class="block font-bold">Dashboard</a>
+    <a href="{% url 'upload_file' %}" class="block">Upload</a>
+    <a href="{% url 'raw_data' %}" class="block font-bold text-yellow-300 underline">Raw Data</a>
+    <a href="{% url 'algorithms' %}" class="block">Algorithms</a>
+    <a href="{% url 'profit_analysis' %}" class="block">Profit Analysis</a>
+    <a href="{% url 'future_predictions' %}" class="block">Future (30 Days)</a>
+    <a href="{% url 'future_box_score' %}" class="block">Future Profit</a>
   </div>
 </nav>
 <!-- ================= END NAVBAR ================= -->
 
 <!-- ================= CONTENT ================= -->
-<div class="container mx-auto px-4 md:px-12 py-8">
+<div class="container mx-auto px-4 md:px-12 py-8 pt-28">
 
   <h1 class="text-4xl md:text-5xl font-bold text-teal-700 mb-3 text-center">
     Raw Data Explorer
@@ -117,6 +131,16 @@
 
 </div>
 <!-- ================= END CONTENT ================= -->
+
+<!-- ================= NAVBAR JS ================= -->
+<script>
+  const menuBtn = document.getElementById("menuBtn");
+  const mobileMenu = document.getElementById("mobileMenu");
+
+  menuBtn.onclick = () => {
+    mobileMenu.classList.toggle("hidden");
+  };
+</script>
 
 </body>
 </html>
