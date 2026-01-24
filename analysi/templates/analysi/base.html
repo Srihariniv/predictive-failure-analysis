@@ -1,14 +1,22 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta charset="UTF-8" />
+  <title>{% block title %}AI Dashboard{% endblock %}</title>
+
+  <!-- Tailwind & Libraries (COMMON) -->
   <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/html2pdf.js@0.10.1/dist/html2pdf.bundle.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
+
+  {% block extra_head %}{% endblock %}
 </head>
 
 <body class="bg-gray-100">
+{% load extra_filters %}
 
-<!-- ================= NAVBAR ================= -->
+<!-- ================= NAVBAR (SAVED FROM YOUR DASHBOARD) ================= -->
 <nav class="bg-gradient-to-r from-teal-600 to-teal-700 text-white shadow-lg">
   <div class="container mx-auto px-6 py-4 flex justify-between items-center">
 
@@ -19,17 +27,26 @@
 
     <!-- DESKTOP MENU -->
     <div class="hidden md:flex gap-6 text-sm">
-      <a href="{% url 'dashboard' %}" class="hover:underline">Dashboard</a>
+      <a href="{% url 'dashboard' %}" class="hover:underline font-bold">Dashboard</a>
       <a href="{% url 'upload_file' %}" class="hover:underline">Upload</a>
       <a href="{% url 'raw_data' %}" class="hover:underline">Raw Data</a>
       <a href="{% url 'algorithms' %}" class="hover:underline">Algorithms</a>
-      <a href="{% url 'profit_analysis' %}" class="hover:underline">Profit Analysis</a>
+
+      <a href="{% url 'profit_analysis' %}"
+        class="hover:underline {% if request.resolver_match.url_name == 'profit_analysis' %}font-bold text-yellow-300 underline{% endif %}">
+        Profit Analysis
+      </a>
+
       <a href="{% url 'future_predictions' %}" class="hover:underline">Future (30 Days)</a>
-      <a href="{% url 'future_box_score' %}" class="hover:underline">Future Profit</a>
+
+      <a href="{% url 'future_box_score' %}"
+        class="{% if request.resolver_match.url_name == 'future_box_score' %}text-yellow-300 underline{% endif %}">
+        Future Profit
+      </a>
     </div>
 
-    <!-- HAMBURGER (MOBILE) -->
-    <button id="menuBtn" class="md:hidden focus:outline-none">
+    <!-- HAMBURGER -->
+    <button id="menuBtn" class="md:hidden">
       <svg class="w-7 h-7" fill="none" stroke="currentColor" stroke-width="2"
            viewBox="0 0 24 24">
         <path stroke-linecap="round" stroke-linejoin="round"
@@ -40,7 +57,7 @@
 
   <!-- MOBILE MENU -->
   <div id="mobileMenu" class="hidden md:hidden px-6 pb-4 space-y-3 text-sm">
-    <a href="{% url 'dashboard' %}" class="block hover:underline">Dashboard</a>
+    <a href="{% url 'dashboard' %}" class="block hover:underline font-bold">Dashboard</a>
     <a href="{% url 'upload_file' %}" class="block hover:underline">Upload</a>
     <a href="{% url 'raw_data' %}" class="block hover:underline">Raw Data</a>
     <a href="{% url 'algorithms' %}" class="block hover:underline">Algorithms</a>
@@ -51,17 +68,22 @@
 </nav>
 <!-- ================= END NAVBAR ================= -->
 
+<!-- PAGE CONTENT -->
+<div class="container mx-auto p-6">
+  {% block content %}{% endblock %}
+</div>
+
+<!-- MOBILE MENU SCRIPT -->
 <script>
-  document.addEventListener("DOMContentLoaded", function () {
-    const btn = document.getElementById("menuBtn");
-    const menu = document.getElementById("mobileMenu");
-    if (btn && menu) {
-      btn.addEventListener("click", () => menu.classList.toggle("hidden"));
-    }
-  });
+  const btn = document.getElementById('menuBtn');
+  const menu = document.getElementById('mobileMenu');
+  if (btn) {
+    btn.addEventListener('click', () => {
+      menu.classList.toggle('hidden');
+    });
+  }
 </script>
 
-{% block content %}{% endblock %}
-
+{% block extra_js %}{% endblock %}
 </body>
 </html>

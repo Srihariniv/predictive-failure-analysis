@@ -1,103 +1,101 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <title>Raw Data – {{ file_name|default:"BOX SCORE.xlsx" }}</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+{% extends 'analysi/base.html' %}
+{% load static %}
 
-  <!-- Tailwind -->
-  <script src="https://cdn.tailwindcss.com"></script>
+{% block title %}
+Raw Data – {{ file_name|default:"BOX SCORE.xlsx" }}
+{% endblock %}
 
-  <!-- Chart.js -->
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+{% block extra_head %}
+<!-- Bootstrap -->
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
 
-  <!-- Font -->
-  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700&display=swap" rel="stylesheet" />
+<!-- Chart.js -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
-  <style>
-    body { font-family: 'Poppins', sans-serif; }
-    .glow { box-shadow: 0 0 20px rgba(20,184,166,0.15); }
+<!-- Font -->
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700&display=swap" rel="stylesheet">
 
+<style>
+  body {
+    font-family: 'Poppins', sans-serif;
+  }
+
+  .glow {
+    box-shadow: 0 0 20px rgba(20,184,166,0.15);
+  }
+
+  /* ===== TABLE WRAPPER ===== */
+  .table-scroll {
+    max-height: 75vh;
+    overflow-y: auto;
+    overflow-x: auto;
+    border: 1px solid #e5e7eb;
+    border-radius: 12px;
+  }
+
+  table {
+    min-width: 1200px;
+  }
+
+  thead th {
+    position: sticky;
+    top: 0;
+    
+    background: #0d9488;
+    color: white;
+    z-index: 10;
+  }
+
+  /* ===== IPAD ===== */
+  @media (max-width: 1024px) {
     .table-scroll {
-      max-height: 80vh;
-      overflow-y: auto;
-      overflow-x: auto;
-      border: 1px solid #e5e7eb;
-      border-radius: 12px;
+      max-height: 60vh;
     }
 
-    table { min-width: 1300px; }
-
-    thead th {
-      position: sticky;
-      top: 0;
-      background: #0d9488;
-      color: white;
-      z-index: 10;
+    table {
+      min-width: 900px;
     }
-  </style>
-</head>
 
-<body class="bg-gradient-to-br from-gray-50 via-teal-50 to-white min-h-screen">
+    td, th {
+      padding: 6px 10px;
+      font-size: 12px;
+    }
+  }
 
-<!-- ================= SAME DASHBOARD NAVBAR ================= -->
-<nav class="bg-gradient-to-r from-teal-600 to-teal-700 text-white shadow-lg fixed top-0 left-0 right-0 z-50">
-  <div class="container mx-auto px-6 py-4 flex justify-between items-center">
+  /* ===== MOBILE ===== */
+  @media (max-width: 768px) {
+    .table-scroll {
+      max-height: 50vh;
+    }
 
-    <!-- LOGO -->
-    <a href="{% url 'home' %}" class="text-xl md:text-2xl font-bold">
-      Predictive Failure Analysis Using AI
-    </a>
+    table {
+      min-width: 700px;
+    }
 
-    <!-- DESKTOP MENU -->
-    <div class="hidden md:flex gap-6 text-sm items-center">
-      <a href="{% url 'dashboard' %}" class="hover:underline">Dashboard</a>
-      <a href="{% url 'upload_file' %}" class="hover:underline">Upload</a>
-      <a href="{% url 'raw_data' %}" class="font-bold underline text-yellow-300">Raw Data</a>
-      <a href="{% url 'algorithms' %}" class="hover:underline">Algorithms</a>
-      <a href="{% url 'profit_analysis' %}" class="hover:underline">Profit Analysis</a>
-      <a href="{% url 'future_predictions' %}" class="hover:underline">Future (30 Days)</a>
-      <a href="{% url 'future_box_score' %}" class="hover:underline">Future Profit</a>
-    </div>
+    td, th {
+      padding: 5px 8px;
+      font-size: 11px;
+    }
+  }
+</style>
+{% endblock %}
+{% block content %}
+<div class="container mx-auto px-4 md:px-12 py-8 pt-8">
 
-    <!-- MOBILE HAMBURGER -->
-    <button id="menuBtn" class="md:hidden text-2xl">
-      ☰
-    </button>
-  </div>
 
-  <!-- MOBILE MENU (DASHBOARD STYLE) -->
-  <div id="mobileMenu"
-       class="hidden md:hidden fixed top-[72px] left-0 w-64 h-full
-              bg-teal-700 text-white px-6 py-6 space-y-4 shadow-xl">
-
-    <a href="{% url 'dashboard' %}" class="block font-bold">Dashboard</a>
-    <a href="{% url 'upload_file' %}" class="block">Upload</a>
-    <a href="{% url 'raw_data' %}" class="block font-bold text-yellow-300 underline">Raw Data</a>
-    <a href="{% url 'algorithms' %}" class="block">Algorithms</a>
-    <a href="{% url 'profit_analysis' %}" class="block">Profit Analysis</a>
-    <a href="{% url 'future_predictions' %}" class="block">Future (30 Days)</a>
-    <a href="{% url 'future_box_score' %}" class="block">Future Profit</a>
-  </div>
-</nav>
-<!-- ================= END NAVBAR ================= -->
-
-<!-- ================= CONTENT ================= -->
-<div class="container mx-auto px-4 md:px-12 py-8 pt-28">
-
-  <h1 class="text-4xl md:text-5xl font-bold text-teal-700 mb-3 text-center">
+  <h1 class="text-3xl md:text-5xl font-bold text-teal-700 mb-3 text-center">
     Raw Data Explorer
   </h1>
 
-  <p class="text-lg text-gray-600 text-center mb-7">
-    Showing all details from:
+  <p class="text-sm md:text-lg text-gray-600 text-center mb-6">
+    Showing all details from
     <span class="text-teal-800 font-semibold">
       {{ file_name|default:"BOX SCORE.xlsx" }}
     </span>
   </p>
 
   {% if error %}
-    <div class="bg-red-100 border border-red-400 text-red-700 p-4 rounded-xl mb-8 text-center glow">
+    <div class="bg-red-100 border border-red-400 text-red-700 p-4 rounded-xl mb-6 text-center glow">
       {{ error }}
     </div>
   {% endif %}
@@ -109,7 +107,11 @@
         <thead>
           <tr>
             {% for col in main_table_cols_range %}
-              <th class="px-4 py-3 border border-gray-300 text-left font-semibold uppercase whitespace-nowrap"></th>
+            <th class="border border-green-600 border-t-4 
+           text-left text-lg font-bold uppercase 
+           whitespace-nowrap px-3 py-2">
+</th>
+
             {% endfor %}
           </tr>
         </thead>
@@ -118,7 +120,7 @@
           {% for row in main_table %}
             <tr class="odd:bg-gray-50 even:bg-white">
               {% for cell in row %}
-                <td class="border border-gray-200 px-4 py-2 text-gray-700 font-mono whitespace-nowrap">
+                <td class="border border-gray-200 text-gray-700 font-mono whitespace-nowrap">
                   {{ cell }}
                 </td>
               {% endfor %}
@@ -130,17 +132,5 @@
   </div>
 
 </div>
-<!-- ================= END CONTENT ================= -->
 
-<!-- ================= NAVBAR JS ================= -->
-<script>
-  const menuBtn = document.getElementById("menuBtn");
-  const mobileMenu = document.getElementById("mobileMenu");
-
-  menuBtn.onclick = () => {
-    mobileMenu.classList.toggle("hidden");
-  };
-</script>
-
-</body>
-</html>
+{% endblock %}
