@@ -63,6 +63,11 @@
         class="{% if request.resolver_match.url_name == 'future_box_score' %}text-yellow-300 underline{% endif %}">
         Future Profit
       </a>
+      <a href="{% url 'logout' %}"
+   class="hover:underline text-red-200 font-semibold whitespace-nowrap">
+   Logout
+</a>
+
     </div>
 
     <!-- HAMBURGER BUTTON (MOBILE ONLY) -->
@@ -93,6 +98,7 @@
       class="block {% if request.resolver_match.url_name == 'future_box_score' %}text-yellow-300 underline{% endif %}">
       Future Profit
     </a>
+    
   </div>
 </nav>
 <!-- ================= END NAVIGATION ================= -->

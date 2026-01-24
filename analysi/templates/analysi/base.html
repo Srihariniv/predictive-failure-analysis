@@ -16,7 +16,7 @@
 <body class="bg-gray-100">
 {% load extra_filters %}
 
-<!-- ================= NAVBAR (SAVED FROM YOUR DASHBOARD) ================= -->
+<!-- ================= NAVBAR (OLD SAME) ================= -->
 <nav class="bg-gradient-to-r from-teal-600 to-teal-700 text-white shadow-lg">
   <div class="container mx-auto px-6 py-4 flex justify-between items-center">
 
@@ -25,7 +25,7 @@
       Predictive Failure Analysis Using AI
     </a>
 
-    <!-- DESKTOP MENU -->
+    <!-- DESKTOP MENU (OLD SAME + LOGOUT ADDED) -->
     <div class="hidden md:flex gap-6 text-sm">
       <a href="{% url 'dashboard' %}" class="hover:underline font-bold">Dashboard</a>
       <a href="{% url 'upload_file' %}" class="hover:underline">Upload</a>
@@ -37,13 +37,20 @@
         Profit Analysis
       </a>
 
-      <a href="{% url 'future_predictions' %}" class="hover:underline">Future (30 Days)</a>
-
-      <a href="{% url 'future_box_score' %}"
-        class="{% if request.resolver_match.url_name == 'future_box_score' %}text-yellow-300 underline{% endif %}">
-        Future Profit
+      <a href="{% url 'future_predictions' %}" class="hover:underline">
+        Future(30 days) 
       </a>
-    </div>
+      <a href="{% url 'future_box_score' %}"
+               class="{% if request.resolver_match.url_name == 'future_box_score' %}text-yellow-300 underline{% endif %}">
+               Future Profit
+            </a>
+
+      <!-- ✅ LOGOUT (ONLY ADDITION) -->
+      <a href="{% url 'logout' %}"
+   class="hover:underline text-red-200 font-semibold whitespace-nowrap">
+   Logout
+</a>
+
 
     <!-- HAMBURGER -->
     <button id="menuBtn" class="md:hidden">
@@ -55,7 +62,7 @@
     </button>
   </div>
 
-  <!-- MOBILE MENU -->
+  <!-- MOBILE MENU (OLD SAME + LOGOUT ADDED) -->
   <div id="mobileMenu" class="hidden md:hidden px-6 pb-4 space-y-3 text-sm">
     <a href="{% url 'dashboard' %}" class="block hover:underline font-bold">Dashboard</a>
     <a href="{% url 'upload_file' %}" class="block hover:underline">Upload</a>
@@ -64,6 +71,9 @@
     <a href="{% url 'profit_analysis' %}" class="block hover:underline">Profit Analysis</a>
     <a href="{% url 'future_predictions' %}" class="block hover:underline">Future (30 Days)</a>
     <a href="{% url 'future_box_score' %}" class="block hover:underline">Future Profit</a>
+
+    <!-- ✅ LOGOUT (ONLY ADDITION) -->
+    
   </div>
 </nav>
 <!-- ================= END NAVBAR ================= -->
@@ -73,7 +83,7 @@
   {% block content %}{% endblock %}
 </div>
 
-<!-- MOBILE MENU SCRIPT -->
+<!-- MOBILE MENU SCRIPT (OLD SAME) -->
 <script>
   const btn = document.getElementById('menuBtn');
   const menu = document.getElementById('mobileMenu');

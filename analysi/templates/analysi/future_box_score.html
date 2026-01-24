@@ -73,11 +73,16 @@
                class="{% if request.resolver_match.url_name == 'profit_analysis' %}text-yellow-300 underline{% endif %}">
                Profit Analysis
             </a>
-            <a href="{% url 'future_predictions' %}" class="hover:text-yellow-300">Future</a>
+            <a href="{% url 'future_predictions' %}" class="hover:text-yellow-300">Future(30days)</a>
             <a href="{% url 'future_box_score' %}"
                class="{% if request.resolver_match.url_name == 'future_box_score' %}text-yellow-300 underline{% endif %}">
                Future Box Score
             </a>
+            <a href="{% url 'logout' %}"
+   class="hover:underline text-red-200 font-semibold whitespace-nowrap">
+   Logout
+</a>
+
         </div>
     </div>
 </nav>
